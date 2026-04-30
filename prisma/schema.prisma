@@ -1,0 +1,109 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  COMERCIAL
+  PRE_VENDAS
+  LEITURA
+}
+
+/// Ciclo de vida da proposta no sistema (fluxo operacional).
+enum FormStatus {
+  DRAFT
+  IN_PROGRESS
+  PAUSED
+  FINALIZED
+  ARCHIVED
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  name               String
+  email              String             @unique
+  passwordHash       String
+  role               UserRole
+  active             Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  submissions        Submission[]
+  formSessions       FormSession[]
+  audits             AuditLog[]
+  proposalRevisions  ProposalRevision[]
+}
+
+model Submission {
+  id             String     @id @default(cuid())
+  internalName   String
+  payloadJson    String
+  warningsJson   String
+  generatedDoc   String
+  generatedAt    DateTime   @default(now())
+  createdById    String
+  createdBy      User       @relation(fields: [createdById], references: [id])
+  audits         AuditLog[]
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  action         String
+  resourceType   String
+  resourceId     String
+  detailsJson    String
+  createdAt      DateTime     @default(now())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  submissionId   String?
+  submission     Submission?  @relation(fields: [submissionId], references: [id])
+  formSessionId  String?
+  formSession    FormSession? @relation(fields: [formSessionId], references: [id], onDelete: SetNull)
+
+  @@index([formSessionId, createdAt])
+}
+
+model FormSession {
+  id                 String              @id @default(cuid())
+  title              String
+  status             FormStatus          @default(DRAFT)
+  clientName         String?
+  opportunityRef     String?
+  revision           Int                 @default(1)
+  payloadJson        String
+  warningsJson       String
+  startedAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  finalizedAt        DateTime?
+  finalDocument        String?
+  createdById        String
+  createdBy          User                @relation(fields: [createdById], references: [id])
+  audits             AuditLog[]
+  proposalRevisions  ProposalRevision[]
+
+  @@index([createdById, updatedAt])
+  @@index([status, updatedAt])
+}
+
+/// Snapshot imutavel apos cada persistencia relevante (auditoria e reabertura segura).
+model ProposalRevision {
+  id             String      @id @default(cuid())
+  formSessionId  String
+  formSession    FormSession @relation(fields: [formSessionId], references: [id], onDelete: Cascade)
+  status         FormStatus
+  payloadJson    String
+  warningsJson   String
+  note           String?
+  createdById    String
+  createdBy      User        @relation(fields: [createdById], references: [id])
+  createdAt      DateTime    @default(now())
+
+  @@index([formSessionId, createdAt])
+}

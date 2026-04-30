@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+:root {
+  /* Brand (frontend de referência) */
+  --brand-50: #f0f4ff;
+  --brand-100: #dde6ff;
+  --brand-200: #c3d0ff;
+  --brand-300: #9db1ff;
+  --brand-400: #7086ff;
+  --brand-500: #4b5fff;
+  --brand-600: #3444f0;
+  --brand-700: #2a36d6;
+  --brand-800: #242dac;
+  --brand-900: #222c88;
+
+  /* Surfaces / neutros */
+  --surface-0: #ffffff;
+  --surface-50: #f8f9fc;
+  --surface-100: #f1f3f9;
+  --surface-200: #e4e8f2;
+  --surface-300: #cdd3e4;
+  --surface-400: #9ca3af;
+  --surface-500: #6b7280;
+  --surface-600: #525b75;
+  --surface-700: #4a5068;
+  --surface-800: #2d3148;
+  --surface-900: #1a1d2e;
+  --surface-950: #0f1120;
+
+  --sidebar-bg: #1a1d2e;
+  --premium-violet: #8b5cf6;
+
+  --background: var(--surface-50);
+  --foreground: var(--surface-900);
+  --card: var(--surface-0);
+  --border: color-mix(in srgb, var(--surface-200) 88%, transparent);
+  --accent: var(--brand-500);
+  --accent-fg: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-surface-0: var(--surface-0);
+  --color-surface-50: var(--surface-50);
+  --color-surface-100: var(--surface-100);
+  --color-surface-200: var(--surface-200);
+  --color-surface-300: var(--surface-300);
+  --color-surface-400: var(--surface-400);
+  --color-surface-500: var(--surface-500);
+  --color-surface-600: var(--surface-600);
+  --color-surface-700: var(--surface-700);
+  --color-surface-800: var(--surface-800);
+  --color-surface-900: var(--surface-900);
+  --color-surface-950: var(--surface-950);
+
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-premium-violet: var(--premium-violet);
+
+  /* Gradiente secundário (premium-gradient-alt) */
+  --background-image-premium-gradient-alt: linear-gradient(135deg, #4b5fff 0%, #8b5cf6 100%);
+}
+
+body {
+  /* Fundo alinhado ao DS: superfície plana (evita mistura com zinc/slate do Tailwind) */
+  background-color: var(--surface-50);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background-color: rgb(75 95 255 / 0.28);
+}
