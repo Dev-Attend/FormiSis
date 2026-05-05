@@ -15,6 +15,7 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const raw = params.get("redirect");
     if (raw && raw.startsWith("/") && !raw.startsWith("//")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRedirectTo(raw);
     }
   }, []);

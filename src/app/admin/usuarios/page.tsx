@@ -71,18 +71,9 @@ export default function AdminUsuariosPage() {
   }, [router]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
-
-  useEffect(() => {
-    if (editing) {
-      setEditName(editing.name);
-      setEditEmail(editing.email);
-      setEditRole(editing.role);
-      setEditActive(editing.active);
-      setEditPassword("");
-    }
-  }, [editing]);
 
   const onCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -261,7 +252,14 @@ export default function AdminUsuariosPage() {
                   <button
                     type="button"
                     className="text-sm font-medium text-brand-600 hover:text-brand-700 hover:underline"
-                    onClick={() => setEditing(u)}
+                    onClick={() => {
+                      setEditing(u);
+                      setEditName(u.name);
+                      setEditEmail(u.email);
+                      setEditRole(u.role);
+                      setEditActive(u.active);
+                      setEditPassword("");
+                    }}
                   >
                     Editar
                   </button>

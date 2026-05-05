@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AppCard } from "@/components/AppCard";
 import { AppShell } from "@/components/AppShell";
 import { etapaPreVendasPt } from "@/lib/uiLabels";
@@ -120,7 +120,6 @@ function ValidationTable({ rows }: { rows: Array<SessionRow & { preSalesStage: S
 }
 
 export default function ValidacoesPreVendasPage() {
-  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -130,7 +129,8 @@ export default function ValidacoesPreVendasPage() {
   const [ownerFilter, setOwnerFilter] = useState("ALL");
 
   useEffect(() => {
-    const stage = searchParams.get("stage");
+    const params = new URLSearchParams(window.location.search);
+    const stage = params.get("stage");
     if (
       stage === "ALL" ||
       stage === "DRAFTING" ||
@@ -138,13 +138,14 @@ export default function ValidacoesPreVendasPage() {
       stage === "CHANGES_REQUESTED" ||
       stage === "APPROVED_PRE_SALES"
     ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStageFilter(stage);
     }
-    const priority = searchParams.get("priority");
+    const priority = params.get("priority");
     if (priority === "ALL" || priority === "ALTA" || priority === "MEDIA" || priority === "BAIXA") {
       setPriorityFilter(priority);
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     void (async () => {

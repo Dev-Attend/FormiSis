@@ -1,8 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { Document, Packer, Paragraph, TextRun } from "docx";
-import PDFDocument from "pdfkit";
 import { blocos } from "@/lib/formSchema";
+import { generateTechnicalPdf } from "@/lib/generateTechnicalPdf";
 import { avaliarRegras } from "@/lib/rulesEngine";
 import { requireApiAccess } from "@/lib/auth";
 import { enforceRateLimit } from "@/lib/rateLimit";
@@ -47,17 +47,6 @@ async function generateDocx(lines: string[]) {
   return Packer.toBuffer(doc);
 }
 
-async function generatePdf(lines: string[]) {
-  return new Promise<Buffer>((resolve) => {
-    const chunks: Buffer[] = [];
-    const pdf = new PDFDocument({ margin: 40, size: "A4" });
-    pdf.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    pdf.on("end", () => resolve(Buffer.concat(chunks)));
-    lines.forEach((line) => pdf.text(line));
-    pdf.end();
-  });
-}
-
 export async function POST(request: NextRequest) {
   const auth = await requireApiAccess(request, ["ADMIN", "COMERCIAL", "PRE_VENDAS"]);
   if (!auth.ok) return auth.response;
@@ -70,14 +59,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = (await request.json()) as {
-    data: Record<string, string>;
-    sessionId?: string;
-    expectedRevision?: number;
-  };
+  try {
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Corpo da requisicao nao e JSON valido." }, { status: 400 });
+    }
+    const body = rawBody as {
+      data?: Record<string, string>;
+      sessionId?: string;
+      expectedRevision?: number;
+    };
+    if (!body.data || typeof body.data !== "object") {
+      return NextResponse.json({ error: "Payload invalido: e obrigatorio enviar data (objeto)." }, { status: 400 });
+    }
+    const formData = body.data;
 
-  const outputFormat = body.data._output_format === "pdf" ? "pdf" : "docx";
-  const rules = avaliarRegras(body.data);
+  const outputFormat = formData._output_format === "pdf" ? "pdf" : "docx";
+  const rules = avaliarRegras(formData);
   const requiredBySchema = blocos
     .filter((b) => rules.visibleBlocks.has(b.id))
     .flatMap((b) => b.fields)
@@ -85,11 +85,76 @@ export async function POST(request: NextRequest) {
     .map((f) => f.id);
   const allRequired = new Set([...requiredBySchema, ...Array.from(rules.requiredFields)]);
   const missing = Array.from(allRequired).filter(
-    (fieldId) => !String(body.data[fieldId] ?? "").trim(),
+    (fieldId) => !String(formData[fieldId] ?? "").trim(),
   );
   const allErrors = [...rules.errors, ...missing.map((f) => `Campo obrigatório não preenchido: ${f}`)];
 
-  if (allErrors.length > 0) {
+  let proposalSession: {
+    id: string;
+    revision: number;
+    status: string;
+    createdById: string;
+  } | null = null;
+  /** Proposta ja encerrada: apenas gera documento, sem re-finalizar nem bloquear por regras do fluxo. */
+  let skipFinalizeAndRuleBlock = false;
+
+  if (body.sessionId) {
+    const session = await db.formSession.findUnique({
+      where: { id: body.sessionId },
+      select: { id: true, revision: true, status: true, createdById: true, payloadJson: true },
+    });
+    if (!session) {
+      return NextResponse.json({ error: "Proposta não encontrada para finalização." }, { status: 404 });
+    }
+    if (!canManageProposal(auth.user.role, session.createdById, auth.user.id)) {
+      return NextResponse.json({ error: "Sem permissao para finalizar esta proposta." }, { status: 403 });
+    }
+    const isTerminalSession =
+      session.status === "FINALIZED" || session.status === "ARCHIVED";
+    skipFinalizeAndRuleBlock = isTerminalSession;
+    if (!isTerminalSession) {
+      if (typeof body.expectedRevision === "number" && body.expectedRevision !== session.revision) {
+        return NextResponse.json(
+          {
+            error: "Conflito de versao ao finalizar. Recarregue a proposta e tente novamente.",
+            currentRevision: session.revision,
+          },
+          { status: 409 },
+        );
+      }
+    }
+    let payloadObj: Record<string, string>;
+    try {
+      payloadObj = JSON.parse((session as { payloadJson?: string }).payloadJson ?? "{}") as Record<string, string>;
+    } catch {
+      return NextResponse.json(
+        { error: "Payload da proposta no servidor esta corrompido (JSON invalido). Contacte o suporte." },
+        { status: 500 },
+      );
+    }
+    const preSales = parsePreSalesMeta(payloadObj);
+    if (!isTerminalSession && preSales.stage !== "APPROVED_PRE_SALES" && auth.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "A proposta precisa de parecer técnico aprovado pelo pré-vendas antes da finalização." }, { status: 400 });
+    }
+    if (!isTerminalSession) {
+      const gate = canTransition(session.status as ProposalStatus, "FINALIZED", auth.user.role);
+      if (!gate.ok) {
+        return NextResponse.json({ error: gate.reason }, { status: 400 });
+      }
+      if (body.expectedRevision === undefined) {
+        return NextResponse.json(
+          {
+            error: "expectedRevision obrigatório para finalizar proposta versionada.",
+            currentRevision: session.revision,
+          },
+          { status: 400 },
+        );
+      }
+      proposalSession = session;
+    }
+  }
+
+  if (!skipFinalizeAndRuleBlock && allErrors.length > 0) {
     await db.auditLog.create({
       data: {
         action: "DOCUMENT_GENERATION_BLOCKED",
@@ -106,64 +171,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let proposalSession: {
-    id: string;
-    revision: number;
-    status: string;
-    createdById: string;
-  } | null = null;
-
-  if (body.sessionId) {
-    const session = await db.formSession.findUnique({
-      where: { id: body.sessionId },
-      select: { id: true, revision: true, status: true, createdById: true, payloadJson: true },
-    });
-    if (!session) {
-      return NextResponse.json({ error: "Proposta não encontrada para finalização." }, { status: 404 });
-    }
-    if (!canManageProposal(auth.user.role, session.createdById, auth.user.id)) {
-      return NextResponse.json({ error: "Sem permissao para finalizar esta proposta." }, { status: 403 });
-    }
-    if (session.status === "FINALIZED") {
-      return NextResponse.json({ error: "Proposta ja finalizada." }, { status: 400 });
-    }
-    if (typeof body.expectedRevision === "number" && body.expectedRevision !== session.revision) {
-      return NextResponse.json(
-        {
-          error: "Conflito de versao ao finalizar. Recarregue a proposta e tente novamente.",
-          currentRevision: session.revision,
-        },
-        { status: 409 },
-      );
-    }
-    const payloadObj = JSON.parse((session as { payloadJson?: string }).payloadJson ?? "{}") as Record<string, string>;
-    const preSales = parsePreSalesMeta(payloadObj);
-    if (preSales.stage !== "APPROVED_PRE_SALES" && auth.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "A proposta precisa de parecer técnico aprovado pelo pré-vendas antes da finalização." }, { status: 400 });
-    }
-    const gate = canTransition(session.status as ProposalStatus, "FINALIZED", auth.user.role);
-    if (!gate.ok) {
-      return NextResponse.json({ error: gate.reason }, { status: 400 });
-    }
-    if (body.expectedRevision === undefined) {
-      return NextResponse.json(
-        {
-          error: "expectedRevision obrigatório para finalizar proposta versionada.",
-          currentRevision: session.revision,
-        },
-        { status: 400 },
-      );
-    }
-    proposalSession = session;
-  }
-
-  const lines = flatLines(body.data, rules.warnings, rules.errors);
+  const lines = flatLines(formData, rules.warnings, rules.errors);
   const outputFile = outputFormat === "pdf" ? "documento-tecnico.pdf" : "documento-tecnico.docx";
 
   const submission = await db.submission.create({
     data: {
-      internalName: body.data.nome_interno_solicitacao || "sem_nome_interno",
-      payloadJson: JSON.stringify(body.data),
+      internalName: formData.nome_interno_solicitacao || "sem_nome_interno",
+      payloadJson: JSON.stringify(formData),
       warningsJson: JSON.stringify(rules.warnings),
       generatedDoc: outputFile,
       createdById: auth.user.id,
@@ -188,7 +202,7 @@ export async function POST(request: NextRequest) {
   logger.info({ submissionId: submission.id, user: auth.user.email, format: outputFormat }, "Documento técnico gerado");
 
   if (proposalSession) {
-    const payloadJson = JSON.stringify(body.data);
+    const payloadJson = JSON.stringify(formData);
     const warningsJson = JSON.stringify(rules.warnings);
     await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const updated = await tx.formSession.update({
@@ -231,8 +245,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (outputFormat === "pdf") {
-    const pdf = await generatePdf(lines);
-    return new NextResponse(new Uint8Array(pdf), {
+    const pdf = await generateTechnicalPdf(lines);
+    return new NextResponse(Buffer.from(pdf), {
       headers: {
         "content-type": "application/pdf",
         "content-disposition": 'attachment; filename="documento-tecnico.pdf"',
@@ -247,5 +261,10 @@ export async function POST(request: NextRequest) {
       "content-disposition": 'attachment; filename="documento-tecnico.docx"',
     },
   });
+  } catch (e: unknown) {
+    logger.error({ err: e }, "Falha em POST /api/document");
+    const message = e instanceof Error ? e.message : "Erro interno ao gerar documento.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 

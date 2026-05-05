@@ -5,7 +5,12 @@ import { requireApiAccess } from "@/lib/auth";
 import { canManageProposal, canViewProposal } from "@/lib/proposalPersistence";
 import { blocos } from "@/lib/formSchema";
 import { canTransition, type ProposalStatus } from "@/lib/proposalWorkflow";
-import { avaliarRegras } from "@/lib/rulesEngine";
+import { listMissingMappedEvidence, listMissingMappedFieldIds } from "@/lib/preSalesValidationMap";
+import {
+  avaliarRegras,
+  listMissingRequiredFields,
+  PRE_SALES_INTERNAL_BLOCK_ID,
+} from "@/lib/rulesEngine";
 import {
   applyPreSalesMeta,
   canCommercialEditStage,
@@ -16,6 +21,22 @@ import {
 } from "@/lib/preSalesMeta";
 
 type PreSalesAction = "SUBMIT_FOR_PRE_SALES" | "APPROVE_TECHNICAL" | "REQUEST_CHANGES";
+
+function getVisibleFieldIds(
+  payload: Record<string, string>,
+  opts?: { includePreSalesInternalBlock?: boolean },
+) {
+  const rules = avaliarRegras(payload);
+  const blockIds = new Set(
+    blocos.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
+  );
+  if (opts?.includePreSalesInternalBlock) {
+    blockIds.add(PRE_SALES_INTERNAL_BLOCK_ID);
+  }
+  return new Set(
+    blocos.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
+  );
+}
 
 export async function GET(
   request: NextRequest,
@@ -68,6 +89,7 @@ export async function PATCH(
     preSalesChecklist?: Partial<PreSalesChecklist>;
     preSalesBlockComments?: PreSalesBlockComments;
     preSalesComment?: string;
+    preSalesRequestedFieldIds?: string[];
   };
 
   const session = await db.formSession.findUnique({ where: { id } });
@@ -112,6 +134,13 @@ export async function PATCH(
   }
   meta = { ...meta, blockComments: mergedBlockComments };
 
+  if (!action && isReviewer && body.preSalesChecklist) {
+    meta = {
+      ...meta,
+      checklist: { ...meta.checklist, ...body.preSalesChecklist },
+    };
+  }
+
   if (!action && auth.user.role === "COMERCIAL" && !canCommercialEditStage(meta.stage)) {
     return NextResponse.json(
       {
@@ -131,17 +160,9 @@ export async function PATCH(
       return NextResponse.json({ error: "Proposta ja esta na fila do pre-vendas." }, { status: 400 });
     }
     const payloadForValidation = body.payload ? { ...body.payload } : { ...nextPayloadObj };
-    const rules = avaliarRegras(payloadForValidation);
-    const requiredBySchema = blocos
-      .filter((b) => rules.visibleBlocks.has(b.id))
-      .flatMap((b) => b.fields)
-      .filter((f) => f.required)
-      .map((f) => f.id);
-    const requiredByRules = Array.from(rules.requiredFields);
-    const allRequired = new Set([...requiredBySchema, ...requiredByRules]);
-    const missingRequired = Array.from(allRequired).filter(
-      (fieldId) => !String(payloadForValidation[fieldId] ?? "").trim(),
-    );
+    const missingRequired = listMissingRequiredFields(payloadForValidation, {
+      excludeBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+    });
     if (missingRequired.length > 0) {
       return NextResponse.json(
         {
@@ -149,6 +170,19 @@ export async function PATCH(
             "Preencha todos os campos obrigatórios antes de enviar para a fila do pré-vendas.",
           missingRequiredFields: missingRequired,
           missingRequiredCount: missingRequired.length,
+        },
+        { status: 400 },
+      );
+    }
+    const visibleFieldIds = getVisibleFieldIds(payloadForValidation);
+    const missingMappedForSubmit = listMissingMappedFieldIds(payloadForValidation, visibleFieldIds);
+    if (missingMappedForSubmit.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Preencha todos os itens técnicos mínimos antes de enviar para a fila do pré-vendas.",
+          missingMappedFieldIds: missingMappedForSubmit,
+          missingMappedCount: missingMappedForSubmit.length,
         },
         { status: 400 },
       );
@@ -173,10 +207,20 @@ export async function PATCH(
     if (!comment) {
       return NextResponse.json({ error: "Informe o parecer técnico ao solicitar ajustes." }, { status: 400 });
     }
+    const requestedFromRequired = listMissingRequiredFields(nextPayloadObj, {
+      excludeBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+    });
+    const visibleFieldIds = getVisibleFieldIds(nextPayloadObj);
+    const requestedFromMapped = listMissingMappedFieldIds(nextPayloadObj, visibleFieldIds);
+    const requestedFieldIds =
+      body.preSalesRequestedFieldIds && body.preSalesRequestedFieldIds.length > 0
+        ? Array.from(new Set(body.preSalesRequestedFieldIds.filter((x) => typeof x === "string" && x.trim().length > 0)))
+        : Array.from(new Set([...requestedFromRequired, ...requestedFromMapped]));
     meta = {
       ...meta,
       checklist: { ...meta.checklist, ...(body.preSalesChecklist ?? {}) },
       stage: "CHANGES_REQUESTED",
+      requestedFieldIds,
       lastDecision: "CHANGES_REQUESTED",
       lastDecisionAt: new Date().toISOString(),
       lastDecisionByRole: auth.user.role === "ADMIN" ? "ADMIN" : "PRE_VENDAS",
@@ -202,10 +246,39 @@ export async function PATCH(
     if (!comment) {
       return NextResponse.json({ error: "Parecer técnico obrigatório para aprovar." }, { status: 400 });
     }
+    const missingReqApprove = listMissingRequiredFields(nextPayloadObj, {
+      extraRequiredBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+    });
+    if (missingReqApprove.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Não é possível aprovar tecnicamente: ainda há campos obrigatórios vazios conforme as regras do formulário.",
+          missingRequiredFields: missingReqApprove,
+          missingRequiredCount: missingReqApprove.length,
+        },
+        { status: 400 },
+      );
+    }
+    const visibleFieldIds = getVisibleFieldIds(nextPayloadObj, {
+      includePreSalesInternalBlock: true,
+    });
+    const missingMappedApprove = listMissingMappedEvidence(nextPayloadObj, visibleFieldIds);
+    if (missingMappedApprove.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Não é possível aprovar tecnicamente: ainda há itens do quadro técnico sem resposta no formulário.",
+          missingMappedCount: missingMappedApprove.length,
+        },
+        { status: 400 },
+      );
+    }
     meta = {
       ...meta,
       checklist: mergedChecklist,
       stage: "APPROVED_PRE_SALES",
+      requestedFieldIds: [],
       lastDecision: "APPROVED",
       lastDecisionAt: new Date().toISOString(),
       lastDecisionByRole: auth.user.role === "ADMIN" ? "ADMIN" : "PRE_VENDAS",

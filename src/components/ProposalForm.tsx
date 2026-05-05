@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { blocos, defaultValues, type Field } from "@/lib/formSchema";
-import { avaliarRegras } from "@/lib/rulesEngine";
+import { listMissingMappedFieldIds } from "@/lib/preSalesValidationMap";
+import { avaliarRegras, PRE_SALES_INTERNAL_BLOCK_ID } from "@/lib/rulesEngine";
 import {
   inputCompactClass,
   labelCompactClass,
 } from "@/lib/uiClasses";
-import { parsePreSalesMeta, type PreSalesStage } from "@/lib/preSalesMeta";
+import { parsePreSalesMeta, type PreSalesMeta, type PreSalesStage } from "@/lib/preSalesMeta";
 import { etapaPreVendasPt, statusPropostaPt } from "@/lib/uiLabels";
 
 type AuditSnapshot = {
@@ -22,16 +23,34 @@ function FieldRenderer({
   register,
   required,
   disabled,
+  needsReview,
+  canToggleReview,
+  onToggleReview,
 }: {
   field: Field;
   register: ReturnType<typeof useForm<Record<string, string>>>["register"];
   required: boolean;
   disabled?: boolean;
+  needsReview?: boolean;
+  canToggleReview?: boolean;
+  onToggleReview?: () => void;
 }) {
   const baseClasses = `${inputCompactClass.replace("mt-0.5 ", "")} disabled:cursor-not-allowed disabled:bg-surface-100`;
   return (
     <label className="flex flex-col gap-0.5 text-sm">
-      <span className="text-xs font-medium text-surface-700">
+      <span className="flex items-center gap-1 text-xs font-medium text-surface-700">
+        {canToggleReview ? (
+          <button
+            type="button"
+            onClick={onToggleReview}
+            className={`text-[11px] leading-none ${needsReview ? "text-amber-500" : "text-surface-300 hover:text-amber-500"}`}
+            title={needsReview ? "Remover solicitação de revisão deste item" : "Solicitar revisão deste item"}
+          >
+            ▲
+          </button>
+        ) : needsReview ? (
+          <span className="text-amber-500">▲</span>
+        ) : null}
         {field.label} {required ? <span className="text-red-600">*</span> : ""}
       </span>
       {field.type === "textarea" ? (
@@ -59,6 +78,9 @@ export function ProposalForm({
   onResumeProposalIdConsumed,
   workspaceResetToken,
   newProposalDraft = false,
+  mode = "default",
+  reviewRequestedFieldIds,
+  onReviewRequestedFieldIdsChange,
 }: {
   onClose?: () => void;
   /** Volta para a fila de propostas (navegação por URL). */
@@ -72,6 +94,9 @@ export function ProposalForm({
    * (equivalente a comecar de facto a proposta no servidor).
    */
   newProposalDraft?: boolean;
+  mode?: "default" | "preSalesReview";
+  reviewRequestedFieldIds?: string[];
+  onReviewRequestedFieldIdsChange?: (ids: string[]) => void;
 }) {
   const router = useRouter();
   const [downloadStatus, setDownloadStatus] = useState("");
@@ -92,6 +117,13 @@ export function ProposalForm({
   const [auditPayload, setAuditPayload] = useState<AuditSnapshot | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [preSalesStage, setPreSalesStage] = useState<PreSalesStage>("DRAFTING");
+  const [preSalesFeedback, setPreSalesFeedback] = useState<{
+    lastComment?: string;
+    lastDecision?: PreSalesMeta["lastDecision"];
+    lastDecisionAt?: string;
+    blockComments?: Record<string, string>;
+    requestedFieldIds?: string[];
+  }>({});
   const lastWorkspaceReset = useRef(0);
 
   const { register, handleSubmit, control, reset } = useForm<Record<string, string>>({
@@ -108,10 +140,18 @@ export function ProposalForm({
     [values],
   );
   const rules = useMemo(() => avaliarRegras(normalizedValues), [normalizedValues]);
-  const visibleBlocks = useMemo(
-    () => blocos.filter((b) => rules.visibleBlocks.has(b.id)),
-    [rules.visibleBlocks],
-  );
+  const visibleBlocks = useMemo(() => {
+    const base = blocos.filter((b) => rules.visibleBlocks.has(b.id));
+    const showPreSalesInternalBlock =
+      mode === "preSalesReview" ||
+      userRole === "PRE_VENDAS" ||
+      userRole === "ADMIN";
+    if (showPreSalesInternalBlock && !base.some((b) => b.id === PRE_SALES_INTERNAL_BLOCK_ID)) {
+      const b21 = blocos.find((b) => b.id === PRE_SALES_INTERNAL_BLOCK_ID);
+      if (b21) return [...base, b21];
+    }
+    return base;
+  }, [rules.visibleBlocks, mode, userRole]);
   const selectedBlock =
     visibleBlocks.find((b) => b.id === activeBlockId) ?? visibleBlocks[0];
   const selectedBlockIndex = selectedBlock
@@ -212,6 +252,13 @@ export function ProposalForm({
       const data = JSON.parse(session.payloadJson || "{}") as Record<string, string>;
       const preSales = parsePreSalesMeta(data);
       setPreSalesStage(preSales.stage);
+      setPreSalesFeedback({
+        lastComment: preSales.lastComment,
+        lastDecision: preSales.lastDecision,
+        lastDecisionAt: preSales.lastDecisionAt,
+        blockComments: preSales.blockComments,
+        requestedFieldIds: preSales.requestedFieldIds ?? [],
+      });
       reset({ ...defaultValues, ...data });
       setCurrentSessionId(session.id);
       setSessionRevision(session.revision);
@@ -442,6 +489,9 @@ export function ProposalForm({
     isCommercial &&
     (preSalesStage === "UNDER_PRE_SALES_REVIEW" || preSalesStage === "APPROVED_PRE_SALES");
   const isFormReadOnly = readOnly || isCommercialLockedByStage;
+  const isFinalized = proposalStatus === "FINALIZED" || readOnly;
+  const isPreSalesReviewMode = mode === "preSalesReview";
+  const disableDataEditing = isPreSalesReviewMode || isFormReadOnly;
   const totalFilledFields = useMemo(
     () =>
       Object.values(normalizedValues).filter((value) => String(value ?? "").trim()).length,
@@ -457,9 +507,59 @@ export function ProposalForm({
     const allRequired = new Set([...requiredBySchema, ...requiredByRules]);
     return Array.from(allRequired).filter((fieldId) => !String(normalizedValues[fieldId] ?? "").trim());
   }, [rules.visibleBlocks, rules.requiredFields, normalizedValues]);
+  const missingMappedForPreSales = useMemo(
+    () => {
+      const visibleFieldIds = new Set(
+        visibleBlocks.flatMap((b) => b.fields.map((f) => f.id)),
+      );
+      return listMissingMappedFieldIds(normalizedValues, visibleFieldIds);
+    },
+    [normalizedValues, visibleBlocks],
+  );
+  const requestedFieldIdsSet = useMemo(
+    () => new Set(reviewRequestedFieldIds ?? preSalesFeedback.requestedFieldIds ?? []),
+    [reviewRequestedFieldIds, preSalesFeedback.requestedFieldIds],
+  );
+  const requestedBlockIdsFromFieldsSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const fieldId of requestedFieldIdsSet) {
+      const block = blocos.find((b) => b.fields.some((f) => f.id === fieldId));
+      if (block) ids.add(block.id);
+    }
+    return ids;
+  }, [requestedFieldIdsSet]);
+  const requestedBlockIdsFallbackSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const k of Object.keys(preSalesFeedback.blockComments ?? {})) {
+      const [, blockText] = k.split("::");
+      const match = blockText?.match(/Bloco\s+(\d+)/i);
+      if (match?.[1]) ids.add(`bloco${match[1]}`);
+    }
+    return ids;
+  }, [preSalesFeedback.blockComments]);
+  const shouldMarkFieldForReview = useCallback(
+    (fieldId: string, blockId: string) => {
+      if (preSalesStage !== "CHANGES_REQUESTED") return false;
+      if (requestedFieldIdsSet.has(fieldId)) return true;
+      // Compatibilidade com pedidos antigos: quando nao houver itens detalhados, marcamos os campos do bloco sinalizado.
+      if (requestedFieldIdsSet.size === 0 && requestedBlockIdsFallbackSet.has(blockId)) return true;
+      return false;
+    },
+    [preSalesStage, requestedFieldIdsSet, requestedBlockIdsFallbackSet],
+  );
+  const toggleRequestedField = useCallback(
+    (fieldId: string) => {
+      const next = new Set(requestedFieldIdsSet);
+      if (next.has(fieldId)) next.delete(fieldId);
+      else next.add(fieldId);
+      onReviewRequestedFieldIdsChange?.(Array.from(next));
+    },
+    [requestedFieldIdsSet, onReviewRequestedFieldIdsChange],
+  );
+  const canGenerateDocument = !isPreSalesReviewMode && (isFinalized || !isFormReadOnly);
 
   const onSubmit = async (data: Record<string, string>) => {
-    if (isFormReadOnly) {
+    if (isFormReadOnly && !isFinalized) {
       setDownloadStatus("Proposta encerrada: geracao bloqueada.");
       return;
     }
@@ -467,7 +567,7 @@ export function ProposalForm({
       setDownloadStatus("Clique em Iniciar para criar a proposta no servidor antes de gerar o documento.");
       return;
     }
-    if (preSalesStage !== "APPROVED_PRE_SALES" && userRole !== "ADMIN") {
+    if (!isFinalized && preSalesStage !== "APPROVED_PRE_SALES" && userRole !== "ADMIN") {
       setDownloadStatus("A proposta precisa de parecer técnico aprovado pelo pré-vendas antes da finalização.");
       return;
     }
@@ -482,10 +582,12 @@ export function ProposalForm({
       (fieldId) => !String(data[fieldId] ?? "").trim(),
     );
 
-    const submitErrors = [
-      ...rules.errors,
-      ...missing.map((f) => `Campo obrigatório não preenchido: ${f}`),
-    ];
+    const submitErrors = isFinalized
+      ? []
+      : [
+          ...rules.errors,
+          ...missing.map((f) => `Campo obrigatório não preenchido: ${f}`),
+        ];
     setBlockingErrors(submitErrors);
     if (submitErrors.length > 0) {
       setDownloadStatus("Envio bloqueado por validacoes obrigatorias.");
@@ -499,6 +601,7 @@ export function ProposalForm({
 
     const res = await fetch("/api/document", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         data,
@@ -507,20 +610,24 @@ export function ProposalForm({
       }),
     });
     if (!res.ok) {
-      let message = "Falha na geração do documento.";
+      let message = `Falha na geração do documento (HTTP ${res.status}).`;
+      const text = await res.text();
+      let payload: { details?: string[]; error?: string; currentRevision?: number } | null = null;
       try {
-        const payload = (await res.json()) as { details?: string[]; error?: string; currentRevision?: number };
-        if (payload.currentRevision !== undefined) {
-          setSessionRevision(payload.currentRevision);
-        }
-        if (payload.details?.length) {
-          setBlockingErrors(payload.details);
-          message = payload.error ?? message;
-        } else if (payload.error) {
-          message = payload.error;
-        }
+        payload = JSON.parse(text) as { details?: string[]; error?: string; currentRevision?: number };
       } catch {
-        // sem payload json
+        const snippet = text.replace(/\s+/g, " ").trim().slice(0, 280);
+        setDownloadStatus(snippet ? `${message} ${snippet}` : message);
+        return;
+      }
+      if (payload && typeof payload === "object" && payload.currentRevision !== undefined) {
+        setSessionRevision(payload.currentRevision);
+      }
+      if (payload && typeof payload === "object" && payload.details?.length) {
+        setBlockingErrors(payload.details);
+        message = payload.error ?? message;
+      } else if (payload && typeof payload === "object" && payload.error) {
+        message = payload.error;
       }
       setDownloadStatus(message);
       return;
@@ -588,44 +695,51 @@ export function ProposalForm({
                 Fechar
               </span>
             )}
-            <button
-              type="button"
-              onClick={() => void iniciarProposta()}
-              disabled={readOnly || Boolean(currentSessionId) || !newProposalDraft}
-              className={topBarBtnPrimary}
-            >
-              Iniciar
-            </button>
-            <button
-              type="button"
-              onClick={() => void pausarSalvar()}
-              disabled={isFormReadOnly || !currentSessionId}
-              title={!currentSessionId ? "Disponivel apos Iniciar" : undefined}
-              className={topBarBtnBase}
-            >
-              Pausar e salvar
-            </button>
-            <button
-              type="button"
-              onClick={() => void enviarParaValidacaoTecnica()}
-              disabled={
-                isFormReadOnly ||
-                !currentSessionId ||
-                !(
-                  (preSalesStage === "DRAFTING" || preSalesStage === "CHANGES_REQUESTED") &&
-                  (userRole === "COMERCIAL" || userRole === "ADMIN")
-                ) ||
-                missingRequiredForPreSales.length > 0
-              }
-              title={
-                missingRequiredForPreSales.length > 0
-                  ? `Preencha ${missingRequiredForPreSales.length} campo(s) obrigatório(s) antes de enviar.`
-                  : undefined
-              }
-              className={topBarBtnBase}
-            >
-              Enviar para fila do pre-vendas
-            </button>
+            {!isPreSalesReviewMode ? (
+              <button
+                type="button"
+                onClick={() => void iniciarProposta()}
+                disabled={readOnly || Boolean(currentSessionId) || !newProposalDraft}
+                className={topBarBtnPrimary}
+              >
+                Iniciar
+              </button>
+            ) : null}
+            {!isPreSalesReviewMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void pausarSalvar()}
+                  disabled={isFormReadOnly || !currentSessionId}
+                  title={!currentSessionId ? "Disponivel apos Iniciar" : undefined}
+                  className={topBarBtnBase}
+                >
+                  Pausar e salvar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void enviarParaValidacaoTecnica()}
+                  disabled={
+                    isFormReadOnly ||
+                    !currentSessionId ||
+                    !(
+                      (preSalesStage === "DRAFTING" || preSalesStage === "CHANGES_REQUESTED") &&
+                      (userRole === "COMERCIAL" || userRole === "ADMIN")
+                    ) ||
+                    missingRequiredForPreSales.length > 0 ||
+                    missingMappedForPreSales.length > 0
+                  }
+                  title={
+                    missingRequiredForPreSales.length > 0 || missingMappedForPreSales.length > 0
+                      ? `Preencha ${missingRequiredForPreSales.length} obrigatório(s) e ${missingMappedForPreSales.length} item(ns) técnico(s) antes de enviar.`
+                      : undefined
+                  }
+                  className={topBarBtnBase}
+                >
+                  Enviar para fila do pre-vendas
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
@@ -634,25 +748,40 @@ export function ProposalForm({
         <input
           className={inputCompactClass}
           value={proposalTitle}
-          disabled={isFormReadOnly}
+          disabled={disableDataEditing}
           onChange={(e) => setProposalTitle(e.target.value)}
           placeholder="Titulo interno"
         />
         <input
           className={inputCompactClass}
           value={clientName}
-          disabled={isFormReadOnly}
+          disabled={disableDataEditing}
           onChange={(e) => setClientName(e.target.value)}
           placeholder="Cliente / empresa"
         />
         <input
           className={inputCompactClass}
           value={opportunityRef}
-          disabled={isFormReadOnly}
+          disabled={disableDataEditing}
           onChange={(e) => setOpportunityRef(e.target.value)}
           placeholder="CRM / oportunidade"
         />
       </div>
+
+      {preSalesStage === "CHANGES_REQUESTED" && preSalesFeedback.lastComment ? (
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-semibold text-amber-900">Ajustes solicitados pelo pré-vendas</p>
+          <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-amber-900">
+            {preSalesFeedback.lastComment}
+          </p>
+          <p className="mt-1 text-[10px] text-amber-800">
+            {preSalesFeedback.lastDecisionAt
+              ? `Registrado em ${new Date(preSalesFeedback.lastDecisionAt).toLocaleString("pt-BR")}`
+              : "Parecer técnico registrado."}{" "}
+            Os itens/blocos com revisão solicitada estão marcados com ▲ amarelo. Após ajustar, use &quot;Enviar para fila do pre-vendas&quot;.
+          </p>
+        </div>
+      ) : null}
 
 
       {auditOpen && (
@@ -741,6 +870,12 @@ export function ProposalForm({
               {visibleBlocks.map((bloco) => {
                 const progress = getBlockProgress(bloco.id);
                 const isActive = selectedBlock?.id === bloco.id;
+                const needsReview =
+                  preSalesStage === "CHANGES_REQUESTED" &&
+                  (
+                    (requestedFieldIdsSet.size > 0 && requestedBlockIdsFromFieldsSet.has(bloco.id)) ||
+                    (requestedFieldIdsSet.size === 0 && requestedBlockIdsFallbackSet.has(bloco.id))
+                  );
                 return (
                   <button
                     key={bloco.id}
@@ -753,7 +888,10 @@ export function ProposalForm({
                     }`}
                   >
                     <div className="flex items-start justify-between gap-1.5">
-                      <span className="min-w-0 flex-1 whitespace-normal leading-tight">{bloco.title}</span>
+                      <span className="min-w-0 flex-1 whitespace-normal leading-tight">
+                        {needsReview ? <span className="mr-1 text-amber-500">▲</span> : null}
+                        {bloco.title}
+                      </span>
                       <span className="shrink-0 text-[10px] tabular-nums opacity-80">{progress.pct}%</span>
                     </div>
                     <span
@@ -786,14 +924,12 @@ export function ProposalForm({
                     onChange={(e) => setFieldSearch(e.target.value)}
                     placeholder="Buscar neste bloco?"
                     className="w-full rounded-lg border border-surface-200 px-2 py-1.5 text-xs"
-                    disabled={isFormReadOnly}
                   />
                   <label className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-surface-200 px-2 py-1.5 text-[10px] text-surface-600">
                     <input
                       type="checkbox"
                       checked={showOnlyRequired}
                       onChange={(e) => setShowOnlyRequired(e.target.checked)}
-                      disabled={isFormReadOnly}
                     />
                     Mostrar apenas obrigatórios
                   </label>
@@ -805,7 +941,14 @@ export function ProposalForm({
                       field={field}
                       register={register}
                       required={Boolean(field.required) || rules.requiredFields.has(field.id)}
-                      disabled={isFormReadOnly}
+                      disabled={disableDataEditing}
+                      needsReview={shouldMarkFieldForReview(field.id, selectedBlock.id)}
+                      canToggleReview={
+                        isPreSalesReviewMode &&
+                        preSalesStage === "UNDER_PRE_SALES_REVIEW" &&
+                        (userRole === "PRE_VENDAS" || userRole === "ADMIN")
+                      }
+                      onToggleReview={() => toggleRequestedField(field.id)}
                     />
                   ))}
                 </div>
@@ -824,7 +967,7 @@ export function ProposalForm({
         <div className="mt-auto flex shrink-0 flex-wrap items-center gap-1.5 rounded-lg border border-surface-200/90 bg-surface-0 px-2 py-1.5 text-xs shadow-sm">
           <button
             type="button"
-            disabled={selectedBlockIndex <= 0 || isFormReadOnly}
+            disabled={selectedBlockIndex <= 0}
             onClick={() => {
               const prev = visibleBlocks[selectedBlockIndex - 1];
               if (prev) setActiveBlockId(prev.id);
@@ -835,7 +978,7 @@ export function ProposalForm({
           </button>
           <button
             type="button"
-            disabled={selectedBlockIndex >= visibleBlocks.length - 1 || isFormReadOnly}
+            disabled={selectedBlockIndex >= visibleBlocks.length - 1}
             onClick={() => {
               const next = visibleBlocks[selectedBlockIndex + 1];
               if (next) setActiveBlockId(next.id);
@@ -844,44 +987,52 @@ export function ProposalForm({
           >
             Próximo
           </button>
-          <button
-            className="rounded-md bg-surface-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            onClick={() => void finalizarProposta()}
-            disabled={isFormReadOnly}
-          >
-            Finalizar proposta
-          </button>
-          <button
-            type="button"
-            onClick={() => void loadAuditTrail()}
-            disabled={!currentSessionId}
-            className="rounded-md border border-surface-300 bg-surface-0 px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Auditoria
-          </button>
+          {!isPreSalesReviewMode ? (
+            <>
+              <button
+                className="rounded-md bg-surface-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                onClick={() => void finalizarProposta()}
+                disabled={isFormReadOnly}
+              >
+                Finalizar proposta
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadAuditTrail()}
+                disabled={!currentSessionId}
+                className="rounded-md border border-surface-300 bg-surface-0 px-2.5 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Auditoria
+              </button>
+            </>
+          ) : null}
           <span className="rounded bg-surface-100 px-2 py-1 text-[10px] font-medium text-surface-700">
             Bloco {selectedBlockIndex + 1} de {visibleBlocks.length} ?{" "}
             {selectedBlock ? getBlockProgress(selectedBlock.id).pct : 0}%
           </span>
-          <button
-            className="rounded-md border border-surface-800 bg-surface-0 px-2.5 py-1 text-xs font-medium text-surface-900 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            disabled={isFormReadOnly}
-            onClick={handleSubmit(onSubmit)}
-          >
-            Gerar DOCX
-          </button>
-          <button
-            className="rounded-md border border-surface-800 bg-surface-0 px-2.5 py-1 text-xs font-medium text-surface-900 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
-            type="button"
-            disabled={isFormReadOnly}
-            onClick={() =>
-              handleSubmit((data) => onSubmit({ ...data, _output_format: "pdf" }))()
-            }
-          >
-            Gerar PDF
-          </button>
+          {!isPreSalesReviewMode ? (
+            <>
+              <button
+                className="rounded-md border border-surface-800 bg-surface-0 px-2.5 py-1 text-xs font-medium text-surface-900 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={!canGenerateDocument}
+                onClick={handleSubmit(onSubmit)}
+              >
+                Gerar DOCX
+              </button>
+              <button
+                className="rounded-md border border-surface-800 bg-surface-0 px-2.5 py-1 text-xs font-medium text-surface-900 hover:bg-surface-50 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={!canGenerateDocument}
+                onClick={() =>
+                  handleSubmit((data) => onSubmit({ ...data, _output_format: "pdf" }))()
+                }
+              >
+                Gerar PDF
+              </button>
+            </>
+          ) : null}
           {downloadStatus && (
             <span className="self-center pl-0.5 text-[11px] text-surface-500">{downloadStatus}</span>
           )}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AppCard } from "@/components/AppCard";
 import { PageHeader } from "@/components/PageHeader";
@@ -130,7 +130,6 @@ function ProposalTable({ rows, userRole }: { rows: SessionRow[]; userRole: strin
 }
 
 export default function PropostasPage() {
-  const searchParams = useSearchParams();
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [userRole, setUserRole] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -139,11 +138,13 @@ export default function PropostasPage() {
   const [ownerFilter, setOwnerFilter] = useState("ALL");
 
   useEffect(() => {
-    const queue = searchParams.get("queue");
+    const params = new URLSearchParams(window.location.search);
+    const queue = params.get("queue");
     if (queue === "ALL" || queue === "ACTIVE" || queue === "PAUSED" || queue === "CLOSED") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setQueueFilter(queue);
     }
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     void (async () => {

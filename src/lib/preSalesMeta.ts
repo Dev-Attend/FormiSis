@@ -19,6 +19,7 @@ export type PreSalesMeta = {
   stage: PreSalesStage;
   checklist: PreSalesChecklist;
   blockComments: PreSalesBlockComments;
+  requestedFieldIds?: string[];
   lastDecisionByRole?: "PRE_VENDAS" | "ADMIN";
   lastDecisionAt?: string;
   lastDecision?: "APPROVED" | "CHANGES_REQUESTED";
@@ -57,6 +58,7 @@ export function parsePreSalesMeta(payload: Record<string, string>): PreSalesMeta
       },
       blockComments:
         v.blockComments && typeof v.blockComments === "object" ? { ...v.blockComments } : {},
+      requestedFieldIds: Array.isArray(v.requestedFieldIds) ? v.requestedFieldIds.filter((x) => typeof x === "string") : [],
       lastDecisionByRole: v.lastDecisionByRole,
       lastDecisionAt: v.lastDecisionAt,
       lastDecision: v.lastDecision,

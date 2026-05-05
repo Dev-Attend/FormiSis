@@ -16,7 +16,7 @@ describe("rulesEngine", () => {
     expect(rules.errors.some((e) => e.includes("Urgencia"))).toBe(true);
   });
 
-  it("bloqueia vpn com nat/cgnat", () => {
+  it("sinaliza vpn com nat/cgnat para parecer tecnico", () => {
     const rules = avaliarRegras({
       urgencia: "normal",
       justificativa_urgencia: "",
@@ -29,7 +29,7 @@ describe("rulesEngine", () => {
       cliente_usa_vpn: "sim",
       ha_restricao_de_nat_cgnat: "sim",
     });
-    expect(rules.errors.some((e) => e.includes("NAT/CGNAT"))).toBe(true);
+    expect(rules.warnings.some((e) => e.includes("NAT/CGNAT"))).toBe(true);
   });
 
   it("operacao critica usa ids reais do schema (horario de suporte)", () => {

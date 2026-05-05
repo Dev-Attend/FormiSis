@@ -1,4 +1,7 @@
-import { toFieldId } from "./formSchema";
+import { blocos, toFieldId } from "./formSchema";
+
+/** Bloco interno do Pre-vendas (nao entra no conjunto comercial 1-20 de `visibleBlocks`). */
+export const PRE_SALES_INTERNAL_BLOCK_ID = "bloco21";
 
 export type RulesResult = {
   errors: string[];
@@ -24,6 +27,7 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
     }
   };
 
+  /* Blocos 1-20: visibilidade comercial dinamica. Bloco 21 (interno pre-vendas) e acrescentado na UI/API para revisores. */
   for (let i = 1; i <= 20; i += 1) visibleBlocks.add(`bloco${i}`);
   visibleBlocks.delete("bloco12");
   visibleBlocks.delete("bloco17");
@@ -46,7 +50,9 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
 
   if (isSim(data.restricao_trabalho_altura)) warnings.push("Instalacao com complexidade adicional por trabalho em altura.");
   if (isSim(data.link_contingencia_critica)) warnings.push("Operacao critica: energia, monitoramento e SLA tornam-se obrigatorios.");
-  if (data.link_principal_ou_complementar.toLowerCase().includes("principal")) warnings.push("Link principal: aumentar exigencias de rede, continuidade e analise tecnica.");
+  if (String(data.link_principal_ou_complementar ?? "").toLowerCase().includes("principal")) {
+    warnings.push("Link principal: aumentar exigencias de rede, continuidade e analise tecnica.");
+  }
 
   if (isSim(get(data, "VoIP"))) {
     requireField(id("Ha necessidade de QoS"), "VoIP exige QoS obrigatorio.");
@@ -130,7 +136,9 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
   }
   if (isSim(data.vpn_critica_operacao)) warnings.push("VPN critica: Pre-vendas obrigatorio.");
   if (isSim(get(data, "Ha dependencia de IP publico")) || isSim(get(data, "Ha dependencia de IP fixo"))) warnings.push("Dependencia de IP publico/fixo: sinalizacao tecnica e comercial obrigatoria.");
-  if (isSim(get(data, "Ha restricao de NAT/CGNAT"))) errors.push("Restricao NAT/CGNAT: bloqueio de proposta sem parecer tecnico.");
+  if (isSim(get(data, "Ha restricao de NAT/CGNAT"))) {
+    warnings.push("Restricao NAT/CGNAT: exige parecer tecnico e ressalva na proposta.");
+  }
 
   if (isSim(get(data, "Ha necessidade de failover automatico")) || isSim(get(data, "Ha necessidade de failover manual")) || isSim(get(data, "Ha necessidade de balanceamento")) || isSim(get(data, "Ha necessidade de SD-WAN"))) {
     warnings.push("Failover/balanceamento/SD-WAN: Pre-vendas obrigatorio.");
@@ -249,4 +257,32 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
   }
 
   return { errors, warnings, visibleBlocks, requiredFields };
+}
+
+export type ListMissingRequiredOptions = {
+  /** Exclui obrigatorios destes blocos (ex.: comercial nao preenche o bloco interno do pre-vendas). */
+  excludeBlockIds?: string[];
+  /** Inclui obrigatorios destes blocos mesmo fora de `visibleBlocks` (ex.: aprovar parecer no bloco 21). */
+  extraRequiredBlockIds?: string[];
+};
+
+/** Obrigatorios do schema nos blocos visiveis + extras + exigidos dinamicamente pelas regras. */
+export function listMissingRequiredFields(
+  data: Record<string, string>,
+  opts?: ListMissingRequiredOptions,
+): string[] {
+  const rules = avaliarRegras(data);
+  const exclude = new Set(opts?.excludeBlockIds ?? []);
+  const extra = new Set(opts?.extraRequiredBlockIds ?? []);
+  const requiredBySchema = blocos
+    .filter(
+      (b) =>
+        !exclude.has(b.id) &&
+        (rules.visibleBlocks.has(b.id) || extra.has(b.id)),
+    )
+    .flatMap((b) => b.fields)
+    .filter((f) => f.required)
+    .map((f) => f.id);
+  const allRequired = new Set([...requiredBySchema, ...rules.requiredFields]);
+  return Array.from(allRequired).filter((fieldId) => !String(data[fieldId] ?? "").trim());
 }

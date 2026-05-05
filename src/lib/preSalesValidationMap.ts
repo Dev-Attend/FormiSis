@@ -119,3 +119,31 @@ export const preSalesValidationMap: Record<ChecklistKey, ValidationEvidence[]> =
     },
   ],
 };
+
+/** Campos vazios no quadro técnico mapeado (UI e validação na aprovação técnica). */
+export function listMissingMappedEvidence(
+  payload: Record<string, string>,
+  allowedFieldIds?: Set<string>,
+): string[] {
+  return (Object.keys(preSalesValidationMap) as ChecklistKey[]).flatMap((k) =>
+    preSalesValidationMap[k].flatMap((g) =>
+      g.fields
+        .filter((f) => (!allowedFieldIds || allowedFieldIds.has(f.id)) && !String(payload[f.id] ?? "").trim())
+        .map((f) => `${g.block} · ${f.label}`),
+    ),
+  );
+}
+
+export function listMissingMappedFieldIds(
+  payload: Record<string, string>,
+  allowedFieldIds?: Set<string>,
+): string[] {
+  const ids = (Object.keys(preSalesValidationMap) as ChecklistKey[]).flatMap((k) =>
+    preSalesValidationMap[k].flatMap((g) =>
+      g.fields
+        .filter((f) => (!allowedFieldIds || allowedFieldIds.has(f.id)) && !String(payload[f.id] ?? "").trim())
+        .map((f) => f.id),
+    ),
+  );
+  return Array.from(new Set(ids));
+}
