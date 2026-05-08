@@ -49,7 +49,10 @@ async function verifySession(token: string): Promise<SessionPayload | null> {
 }
 
 function isSecureCookieEnv() {
-  return process.env.NODE_ENV === "production" || process.env.AUTH_SECURE_COOKIES === "1";
+  const secureFlag = process.env.AUTH_SECURE_COOKIES;
+  if (secureFlag === "1") return true;
+  if (secureFlag === "0") return false;
+  return process.env.NODE_ENV === "production";
 }
 
 function cookieHeader(name: string, value: string, maxAgeSec: number) {
