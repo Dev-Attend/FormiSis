@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 const SESSION_COOKIE = "formsis_session";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const needsAuth =
     pathname.startsWith("/dashboard") ||
