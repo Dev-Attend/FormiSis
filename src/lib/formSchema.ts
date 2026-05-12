@@ -13,6 +13,9 @@ export type Field = {
   id: string;
   label: string;
   type: FieldType;
+  layout?: "full";
+  inputClassName?: string;
+  placeholder?: string;
   options?: Option[];
   required?: boolean;
 };
@@ -36,35 +39,92 @@ export const blocos: Block[] = [
     id: "bloco1",
     title: "Bloco 1 — Contexto da demanda",
     fields: [
-      { id: "nome_interno_solicitacao", label: "Nome interno da solicitacao", type: "text", required: true },
-      { id: "tecnologia_proposta", label: "Tecnologia da proposta", type: "text", required: true },
-      { id: "tipo_solucao_desejada", label: "Tipo de solucao desejada", type: "select", options: [
-        { label: "internet principal", value: "internet principal" },
-        { label: "backup", value: "backup" },
-        { label: "contingencia", value: "contingencia" },
-        { label: "temporario", value: "temporario" },
-        { label: "mobilidade", value: "mobilidade" },
-        { label: "projeto hibrido", value: "projeto hibrido" },
-      ], required: true },
-      { id: "urgencia", label: "Urgencia", type: "select", options: [
-        { label: "normal", value: "normal" },
-        { label: "urgente", value: "urgente" },
-        { label: "emergencial", value: "emergencial" },
-      ], required: true },
-      { id: "data_desejada_implantacao", label: "Data desejada para implantacao", type: "date", required: true },
-      { id: "justificativa_urgencia", label: "Justificativa da urgencia", type: "textarea" },
-      { id: "origem_demanda", label: "Origem da demanda", type: "text", required: true },
-      { id: "comercial_responsavel", label: "Comercial responsavel", type: "text", required: true },
-      { id: "segmento_cliente", label: "Segmento do cliente", type: "text", required: true },
-      { id: "porte_cliente", label: "Porte do cliente", type: "text", required: true },
-      { id: "quantidade_sites_escopo", label: "Quantidade de sites no escopo", type: "number", required: true },
-      { id: "demanda_site_unico_multi_site", label: "Demanda site unico ou multi-site", type: "text", required: true },
-      { id: "padronizacao_sites", label: "Ha padronizacao entre sites", type: "select", options: simNao, required: true },
-      { id: "proposta_unica_ou_por_site", label: "Havera proposta unica ou por site", type: "text", required: true },
-      { id: "necessita_visita_antes_proposta", label: "Ha necessidade de visita tecnica antes da proposta", type: "select", options: simNao, required: true },
-      { id: "prazo_contratual_imposto_cliente", label: "Ha prazo contratual imposto pelo cliente", type: "select", options: simNao, required: true },
-      { id: "necessita_modelo_tese_cliente", label: "Ha necessidade de proposta em modelo/tese especifica do cliente", type: "select", options: simNao, required: true },
-      { id: "observacoes_iniciais", label: "Observacoes iniciais", type: "textarea" },
+      {
+        id: "cenario_atual_conectividade",
+        label: "Cenario atual de conectividade",
+        type: "textarea",
+        placeholder: "Qual o cenario atual de conectividade da unidade/site?",
+        required: true,
+      },
+      {
+        id: "links_ativos_tecnologias",
+        label: "Links ativos e tecnologias",
+        type: "textarea",
+        placeholder: "O ambiente possui links ativos atualmente? Se sim, quais tecnologias sao utilizadas?",
+        required: true,
+      },
+      {
+        id: "finalidade_solucao",
+        label: "Finalidade da solucao",
+        type: "select",
+        options: [
+          { label: "Principal", value: "principal" },
+          { label: "Contingencia", value: "contingencia" },
+          { label: "Ampliacao", value: "ampliacao" },
+        ],
+        required: true,
+      },
+      {
+        id: "escopo_unidades",
+        label: "Escopo de unidades",
+        type: "number",
+        placeholder: "Quantas unidades ou filiais farao parte do projeto?",
+        required: true,
+      },
+      {
+        id: "aplicacoes_criticas",
+        label: "Aplicacoes criticas",
+        type: "textarea",
+        placeholder: "Existem aplicacoes criticas que necessitam priorizacao de trafego? ex: ERP, VoIP, VPN",
+        required: true,
+      },
+      {
+        id: "historico_estabilidade",
+        label: "Historico de estabilidade",
+        type: "select",
+        options: [
+          { label: "Sim", value: "sim" },
+          { label: "Nao", value: "nao" },
+          { label: "Parcial", value: "parcial" },
+        ],
+        required: true,
+      },
+      {
+        id: "necessidade_redundancia",
+        label: "Necessidade de redundancia",
+        type: "select",
+        options: simNao,
+        required: true,
+      },
+      {
+        id: "gestao_centralizada",
+        label: "Gestao centralizada",
+        type: "select",
+        options: simNao,
+        required: true,
+      },
+      {
+        id: "perspectiva_crescimento",
+        label: "Perspectiva de crescimento",
+        type: "textarea",
+        placeholder: "Existe perspectiva de crescimento ou expansao para novas localidades?",
+        required: true,
+      },
+      {
+        id: "limitacoes_locais",
+        label: "Limitacoes locais",
+        type: "textarea",
+        placeholder: "Existe alguma limitacao operacional ou estrutural no local?",
+        required: true,
+      },
+      {
+        id: "observacoes_gerais_contexto_demanda",
+        label: "Observacoes Gerais",
+        type: "textarea",
+        layout: "full",
+        inputClassName: "min-h-[100px] resize-y",
+        placeholder: "Insira aqui informacoes adicionais relevantes para o projeto...",
+      },
     ],
   },
   {

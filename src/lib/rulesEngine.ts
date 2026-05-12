@@ -38,7 +38,7 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
     requiredFields.add("justificativa_urgencia");
   }
 
-  if (toNumber(data.quantidade_sites_escopo) > 1) {
+  if (toNumber(data.escopo_unidades) > 1) {
     visibleBlocks.add("bloco19");
     requireField("ms_qtd_total_sites", "Quantidade > 1 site exige bloco multi-site.");
   }
@@ -215,7 +215,7 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
     isSim(data.link_contingencia_critica) ||
     isSim(data.escopo_inclui_wifi) ||
     isSim(data.local_remoto) ||
-    toNumber(data.quantidade_sites_escopo) > 1;
+    toNumber(data.escopo_unidades) > 1;
   if (isSim(get(data, "Ha budget estimado")) && budgetBaixo && composicaoMinimaAlta) {
     warnings.push("Budget possivelmente incompativel com composicao minima: alerta obrigatorio ao Comercial.");
   }
@@ -251,7 +251,7 @@ export function avaliarRegras(data: Record<string, string>): RulesResult {
   const diasParaImplantacao = data.data_desejada_implantacao
     ? Math.ceil((new Date(data.data_desejada_implantacao).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : 999;
-  const altaComplexidade = data.complexidade_tecnica === "alta" || data.complexidade_tecnica === "critica" || toNumber(data.quantidade_sites_escopo) > 1;
+  const altaComplexidade = data.complexidade_tecnica === "alta" || data.complexidade_tecnica === "critica" || toNumber(data.escopo_unidades) > 1;
   if (diasParaImplantacao <= 15 && altaComplexidade) {
     warnings.push("Prazo desejado curto frente a complexidade: sinalizacao de risco logistico obrigatoria.");
   }

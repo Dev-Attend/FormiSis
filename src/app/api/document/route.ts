@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
 
   const submission = await db.submission.create({
     data: {
-      internalName: formData.nome_interno_solicitacao || "sem_nome_interno",
+      internalName: formData.nome_interno_solicitacao || formData.cenario_atual_conectividade || "sem_nome_interno",
       payloadJson: JSON.stringify(formData),
       warningsJson: JSON.stringify(rules.warnings),
       generatedDoc: outputFile,
@@ -267,4 +267,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

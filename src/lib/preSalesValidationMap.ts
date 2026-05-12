@@ -12,11 +12,11 @@ export const preSalesValidationMap: Record<ChecklistKey, ValidationEvidence[]> =
     {
       block: "Bloco 1 — Contexto da demanda",
       fields: [
-        { id: "nome_interno_solicitacao", label: "Nome interno da solicitacao" },
-        { id: "tipo_solucao_desejada", label: "Tipo de solucao desejada" },
-        { id: "urgencia", label: "Urgencia" },
-        { id: "data_desejada_implantacao", label: "Data desejada para implantacao" },
-        { id: "origem_demanda", label: "Origem da demanda" },
+        { id: "cenario_atual_conectividade", label: "Cenario atual de conectividade" },
+        { id: "links_ativos_tecnologias", label: "Links ativos e tecnologias" },
+        { id: "finalidade_solucao", label: "Finalidade da solucao" },
+        { id: "escopo_unidades", label: "Escopo de unidades" },
+        { id: "aplicacoes_criticas", label: "Aplicacoes criticas" },
       ],
     },
     {
@@ -69,8 +69,8 @@ export const preSalesValidationMap: Record<ChecklistKey, ValidationEvidence[]> =
     {
       block: "Bloco 1 — Contexto da demanda",
       fields: [
-        { id: "prazo_contratual_imposto_cliente", label: "Prazo contratual imposto" },
-        { id: "urgencia", label: "Urgencia" },
+        { id: "necessidade_redundancia", label: "Necessidade de redundancia" },
+        { id: "gestao_centralizada", label: "Gestao centralizada" },
       ],
     },
     {

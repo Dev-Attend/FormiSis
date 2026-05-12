@@ -36,8 +36,9 @@ function FieldRenderer({
   onToggleReview?: () => void;
 }) {
   const baseClasses = `${inputCompactClass.replace("mt-0.5 ", "")} disabled:cursor-not-allowed disabled:bg-surface-100`;
+  const inputClasses = `${baseClasses} ${field.inputClassName ?? ""}`.trim();
   return (
-    <label className="flex flex-col gap-0.5 text-sm">
+    <label className={`flex flex-col gap-0.5 text-sm ${field.layout === "full" ? "sm:col-span-2" : ""}`}>
       <span className="flex items-center gap-1 text-xs font-medium text-surface-700">
         {canToggleReview ? (
           <button
@@ -54,9 +55,15 @@ function FieldRenderer({
         {field.label} {required ? <span className="text-red-600">*</span> : ""}
       </span>
       {field.type === "textarea" ? (
-        <textarea className={baseClasses} rows={2} disabled={disabled} {...register(field.id)} />
+        <textarea
+          className={inputClasses}
+          rows={2}
+          placeholder={field.placeholder}
+          disabled={disabled}
+          {...register(field.id)}
+        />
       ) : field.type === "select" ? (
-        <select className={baseClasses} disabled={disabled} {...register(field.id)}>
+        <select className={inputClasses} disabled={disabled} {...register(field.id)}>
           <option value="">Selecione</option>
           {field.options?.map((op) => (
             <option key={op.value} value={op.value}>
@@ -65,7 +72,13 @@ function FieldRenderer({
           ))}
         </select>
       ) : (
-        <input className={baseClasses} type={field.type} disabled={disabled} {...register(field.id)} />
+        <input
+          className={inputClasses}
+          type={field.type}
+          placeholder={field.placeholder}
+          disabled={disabled}
+          {...register(field.id)}
+        />
       )}
     </label>
   );
@@ -304,6 +317,7 @@ export function ProposalForm({
     const title =
       proposalTitle.trim() ||
       normalizedValues.nome_interno_solicitacao?.trim() ||
+      normalizedValues.cenario_atual_conectividade?.trim() ||
       `Proposta ${new Date().toLocaleString("pt-BR")}`;
     setDownloadStatus("Registrando proposta no servidor...");
     const res = await fetch("/api/forms", {
@@ -347,6 +361,7 @@ export function ProposalForm({
     const title =
       proposalTitle.trim() ||
       normalizedValues.nome_interno_solicitacao?.trim() ||
+      normalizedValues.cenario_atual_conectividade?.trim() ||
       "Proposta sem titulo";
     const res = await fetch(`/api/forms/${currentSessionId}`, {
       method: "PATCH",
@@ -388,6 +403,7 @@ export function ProposalForm({
     const title =
       proposalTitle.trim() ||
       normalizedValues.nome_interno_solicitacao?.trim() ||
+      normalizedValues.cenario_atual_conectividade?.trim() ||
       "Proposta sem titulo";
 
     const res = await fetch(`/api/forms/${currentSessionId}`, {
@@ -438,6 +454,7 @@ export function ProposalForm({
     const title =
       proposalTitle.trim() ||
       normalizedValues.nome_interno_solicitacao?.trim() ||
+      normalizedValues.cenario_atual_conectividade?.trim() ||
       "Proposta sem titulo";
 
     const res = await fetch(`/api/forms/${currentSessionId}`, {
@@ -1041,10 +1058,6 @@ export function ProposalForm({
     </div>
   );
 }
-
-
-
-
 
 
 

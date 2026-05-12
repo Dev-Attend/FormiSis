@@ -6,7 +6,7 @@ describe("rulesEngine", () => {
     const rules = avaliarRegras({
       urgencia: "urgente",
       justificativa_urgencia: "",
-      quantidade_sites_escopo: "1",
+      escopo_unidades: "1",
       ambiente: "urbano",
       link_principal_ou_complementar: "principal",
       horario_suporte_desejado: "horario comercial",
@@ -20,7 +20,7 @@ describe("rulesEngine", () => {
     const rules = avaliarRegras({
       urgencia: "normal",
       justificativa_urgencia: "",
-      quantidade_sites_escopo: "1",
+      escopo_unidades: "1",
       ambiente: "urbano",
       link_principal_ou_complementar: "principal",
       horario_suporte_desejado: "horario comercial",
@@ -36,7 +36,7 @@ describe("rulesEngine", () => {
     const base = {
       urgencia: "normal",
       justificativa_urgencia: "",
-      quantidade_sites_escopo: "1",
+      escopo_unidades: "1",
       ambiente: "urbano",
       link_principal_ou_complementar: "principal",
       data_desejada_implantacao: "2026-12-01",
@@ -59,7 +59,7 @@ describe("rulesEngine", () => {
     const base = {
       urgencia: "normal",
       justificativa_urgencia: "",
-      quantidade_sites_escopo: "1",
+      escopo_unidades: "1",
       ambiente: "urbano",
       link_principal_ou_complementar: "principal",
       horario_suporte_desejado: "horario comercial",
