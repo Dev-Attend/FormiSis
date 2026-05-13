@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -10,10 +10,31 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireApiAccess(request, ["ADMIN"]);
+  const auth = await requireApiAccess(request, ["SUPER_ADMIN", "ADMIN"]);
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
+
+  const existingUser = await db.user.findUnique({
+    where: { id },
+    select: { id: true, role: true, companyId: true },
+  });
+  if (!existingUser) {
+    return NextResponse.json({ error: "Usuario nao encontrado." }, { status: 404 });
+  }
+
+  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
+  if (!isSuperAdmin) {
+    if (!auth.user.companyId) {
+      return NextResponse.json({ error: "Administrador sem empresa vinculada." }, { status: 403 });
+    }
+    if (existingUser.companyId !== auth.user.companyId) {
+      return NextResponse.json(
+        { error: "Sem permissao para editar usuario de outra empresa." },
+        { status: 403 },
+      );
+    }
+  }
 
   let body: unknown;
   try {
@@ -39,6 +60,13 @@ export async function PATCH(
   });
   if (!guard.ok) {
     return NextResponse.json({ error: guard.message }, { status: 400 });
+  }
+
+  if (!isSuperAdmin && data.companyId !== undefined) {
+    return NextResponse.json(
+      { error: "Administrador nao pode alterar empresa do usuario." },
+      { status: 403 },
+    );
   }
 
   const update: {
@@ -71,6 +99,15 @@ export async function PATCH(
     update.passwordHash = await bcrypt.hash(data.password, 12);
   }
 
+  const resultingRole = (update.role ?? existingUser.role) as UserRole;
+  const resultingCompanyId = update.companyId ?? existingUser.companyId;
+  if (resultingRole !== "SUPER_ADMIN" && !resultingCompanyId) {
+    return NextResponse.json(
+      { error: "Usuarios que nao sao SUPER_ADMIN devem ter empresa vinculada." },
+      { status: 400 },
+    );
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "Nada a atualizar." }, { status: 400 });
   }
@@ -101,6 +138,7 @@ export async function PATCH(
           role: user.role,
           active: user.active,
           companyId: user.companyId,
+          actorRole: auth.user.role,
         }),
         userId: auth.user.id,
       },

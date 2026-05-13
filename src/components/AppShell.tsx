@@ -68,7 +68,7 @@ export function AppShell({ active, children }: { active: NavKey; children: React
             <Link className={navLink("propostas")} href="/propostas">
               Fila de propostas
             </Link>
-            {(user?.role === "PRE_VENDAS" || user?.role === "ADMIN") && (
+            {(user?.role === "PRE_VENDAS" || user?.role === "ADMIN" || user?.role === "SUPER_ADMIN") && (
               <Link className={navLink("validacoes")} href="/pre-vendas/validacoes">
                 Pré-vendas
               </Link>
@@ -76,7 +76,7 @@ export function AppShell({ active, children }: { active: NavKey; children: React
             <Link className={navLink("documentos")} href="/submissoes">
               Documentos
             </Link>
-            {user?.role === "ADMIN" ? (
+            {user?.role === "ADMIN" || user?.role === "SUPER_ADMIN" ? (
               <Link className={navLink("admin")} href="/admin/usuarios">
                 Usuarios
               </Link>

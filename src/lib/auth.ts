@@ -1,8 +1,13 @@
-import { SignJWT, jwtVerify } from "jose";
+﻿import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "COMERCIAL" | "PRE_VENDAS" | "LEITURA";
+
+export function isAdminRole(role: UserRole) {
+  return role === "SUPER_ADMIN" || role === "ADMIN";
+}
 
 export type AuthResult =
   | {
@@ -93,7 +98,7 @@ export async function requireApiAccess(
   if (!token) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Não autenticado." }, { status: 401 }),
+      response: NextResponse.json({ error: "Nao autenticado." }, { status: 401 }),
     };
   }
 
@@ -113,14 +118,24 @@ export async function requireApiAccess(
   if (!user || !user.active) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Usuário não encontrado ou inativo." }, { status: 403 }),
+      response: NextResponse.json({ error: "Usuario nao encontrado ou inativo." }, { status: 403 }),
     };
   }
 
-  if (!allowedRoles.includes(user.role as UserRole)) {
+  if (user.role !== "SUPER_ADMIN" && !user.companyId) {
     return {
       ok: false,
-      response: NextResponse.json({ error: "Perfil sem permissão para esta operação." }, { status: 403 }),
+      response: NextResponse.json({ error: "Usuario sem empresa vinculada." }, { status: 403 }),
+    };
+  }
+
+  const userRole = user.role as UserRole;
+  const hasDirectRoleAccess = allowedRoles.includes(userRole);
+  const hasAdminInheritance = userRole === "SUPER_ADMIN" && allowedRoles.includes("ADMIN");
+  if (!hasDirectRoleAccess && !hasAdminInheritance) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Perfil sem permissao para esta operacao." }, { status: 403 }),
     };
   }
 
@@ -129,7 +144,7 @@ export async function requireApiAccess(
     user: {
       id: user.id,
       email: user.email,
-      role: user.role as UserRole,
+      role: userRole,
       name: user.name,
       companyId: user.companyId,
       company: user.company

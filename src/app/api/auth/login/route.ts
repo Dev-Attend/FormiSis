@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
   if (!user || !user.active) {
     return NextResponse.json({ error: "Credenciais invalidas." }, { status: 401 });
   }
+  if (user.role !== "SUPER_ADMIN" && !user.companyId) {
+    return NextResponse.json({ error: "Usuario sem empresa vinculada." }, { status: 403 });
+  }
   if (user.companyId && (!user.company || !user.company.active)) {
     return NextResponse.json({ error: "Empresa inativa para este usuario." }, { status: 403 });
   }
