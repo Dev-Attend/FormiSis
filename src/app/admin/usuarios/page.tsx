@@ -312,6 +312,11 @@ export default function AdminUsuariosPage() {
       <PageHeader
         title="Usuarios"
         description="Criar contas, alterar perfis e ativar ou desativar acessos ao FormSis."
+        action={
+          <Link className={btnSecondary} href="/admin/questionarios">
+            Gerir questionarios
+          </Link>
+        }
       />
 
       {error ? (
