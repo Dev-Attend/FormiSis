@@ -4,6 +4,9 @@ export type FieldType =
   | "number"
   | "date"
   | "select"
+  | "radio"
+  | "checkbox"
+  | "boolean"
   | "email"
   | "tel";
 

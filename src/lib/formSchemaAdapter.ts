@@ -41,6 +41,9 @@ const fieldTypes: FieldType[] = [
   "number",
   "date",
   "select",
+  "radio",
+  "checkbox",
+  "boolean",
   "email",
   "tel",
 ];

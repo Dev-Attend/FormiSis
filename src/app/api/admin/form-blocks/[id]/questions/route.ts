@@ -9,6 +9,23 @@ import { createFormQuestionBodySchema } from "@/lib/validators/adminFormBuilder"
 
 const optionTypeSet = new Set(["select", "radio", "checkbox"]);
 
+type DbFormQuestionRow = {
+  id: string;
+  blockId: string;
+  fieldId: string;
+  label: string;
+  type: string;
+  placeholder: string | null;
+  helpText: string | null;
+  requiredDefault: boolean;
+  optionsJson: string | null;
+  validationJson: string | null;
+  order: number;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 function normalizeNullableText(value: string | null | undefined) {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -22,7 +39,7 @@ function ensureBlockTenantAccessOrError({
   authUserCompanyId,
 }: {
   companyId: string;
-  authUserRole: "SUPER_ADMIN" | "ADMIN";
+  authUserRole: string;
   authUserCompanyId: string | null;
 }) {
   if (authUserRole === "SUPER_ADMIN") return null;
@@ -70,7 +87,7 @@ export async function GET(
   });
   if (tenantError) return tenantError;
 
-  const questions = await db.formQuestion.findMany({
+  const questions = (await db.formQuestion.findMany({
     where: { blockId: block.id },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     select: {
@@ -89,7 +106,7 @@ export async function GET(
       createdAt: true,
       updatedAt: true,
     },
-  });
+  })) as DbFormQuestionRow[];
 
   return NextResponse.json({
     block,

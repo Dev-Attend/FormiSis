@@ -19,7 +19,7 @@ function isTenantAllowed({
   userCompanyId,
   resourceCompanyId,
 }: {
-  userRole: "SUPER_ADMIN" | "ADMIN";
+  userRole: string;
   userCompanyId: string | null;
   resourceCompanyId: string;
 }) {

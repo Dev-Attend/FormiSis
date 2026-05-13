@@ -32,6 +32,8 @@ function FieldRenderer({
   register,
   required,
   disabled,
+  value,
+  onValueChange,
   needsReview,
   canToggleReview,
   onToggleReview,
@@ -40,12 +42,28 @@ function FieldRenderer({
   register: ReturnType<typeof useForm<Record<string, string>>>["register"];
   required: boolean;
   disabled?: boolean;
+  value?: string;
+  onValueChange?: (nextValue: string) => void;
   needsReview?: boolean;
   canToggleReview?: boolean;
   onToggleReview?: () => void;
 }) {
   const baseClasses = `${inputCompactClass.replace("mt-0.5 ", "")} disabled:cursor-not-allowed disabled:bg-surface-100`;
   const inputClasses = `${baseClasses} ${field.inputClassName ?? ""}`.trim();
+  const optionList = field.options ?? [];
+  const selectedCheckboxValues = new Set(
+    String(value ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+  const booleanOptions =
+    optionList.length > 0
+      ? optionList
+      : [
+          { label: "Sim", value: "sim" },
+          { label: "Nao", value: "nao" },
+        ];
   return (
     <label className={`flex flex-col gap-0.5 text-sm ${field.layout === "full" ? "sm:col-span-2" : ""}`}>
       <span className="flex items-center gap-1 text-xs font-medium text-surface-700">
@@ -71,15 +89,52 @@ function FieldRenderer({
           disabled={disabled}
           {...register(field.id)}
         />
-      ) : field.type === "select" ? (
+      ) : field.type === "select" || field.type === "boolean" ? (
         <select className={inputClasses} disabled={disabled} {...register(field.id)}>
           <option value="">Selecione</option>
-          {field.options?.map((op) => (
+          {(field.type === "boolean" ? booleanOptions : optionList).map((op) => (
             <option key={op.value} value={op.value}>
               {op.label}
             </option>
           ))}
         </select>
+      ) : field.type === "radio" ? (
+        <div className={`${baseClasses} space-y-1.5`}>
+          {optionList.map((op) => (
+            <label key={op.value} className="flex items-center gap-2 text-xs text-surface-700">
+              <input
+                type="radio"
+                value={op.value}
+                disabled={disabled}
+                className="h-4 w-4 border-surface-300 text-brand-500 focus:ring-brand-500/30"
+                {...register(field.id)}
+              />
+              <span>{op.label}</span>
+            </label>
+          ))}
+        </div>
+      ) : field.type === "checkbox" ? (
+        <div className={`${baseClasses} space-y-1.5`}>
+          {optionList.map((op) => (
+            <label key={op.value} className="flex items-center gap-2 text-xs text-surface-700">
+              <input
+                type="checkbox"
+                value={op.value}
+                checked={selectedCheckboxValues.has(op.value)}
+                disabled={disabled}
+                className="h-4 w-4 rounded border-surface-300 text-brand-500 focus:ring-brand-500/30"
+                onChange={(event) => {
+                  if (!onValueChange) return;
+                  const next = new Set(selectedCheckboxValues);
+                  if (event.target.checked) next.add(op.value);
+                  else next.delete(op.value);
+                  onValueChange(Array.from(next).join(","));
+                }}
+              />
+              <span>{op.label}</span>
+            </label>
+          ))}
+        </div>
       ) : (
         <input
           className={inputClasses}
@@ -152,7 +207,7 @@ export function ProposalForm({
   }>({});
   const lastWorkspaceReset = useRef(0);
 
-  const { register, handleSubmit, control, reset, getValues } = useForm<Record<string, string>>({
+  const { register, handleSubmit, control, reset, getValues, setValue } = useForm<Record<string, string>>({
     defaultValues: {},
     mode: "onChange",
   });
@@ -1073,6 +1128,14 @@ export function ProposalForm({
                       register={register}
                       required={Boolean(field.required) || rules.requiredFields.has(field.id)}
                       disabled={disableDataEditing}
+                      value={normalizedValues[field.id] ?? ""}
+                      onValueChange={(nextValue) =>
+                        setValue(field.id, nextValue, {
+                          shouldDirty: true,
+                          shouldTouch: true,
+                          shouldValidate: true,
+                        })
+                      }
                       needsReview={shouldMarkFieldForReview(field.id, selectedBlock.id)}
                       canToggleReview={
                         isPreSalesReviewMode &&
