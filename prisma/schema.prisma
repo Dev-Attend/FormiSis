@@ -32,6 +32,8 @@ model User {
   email              String             @unique
   passwordHash       String
   role               UserRole
+  companyId          String?
+  company            Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
   active             Boolean            @default(true)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -39,6 +41,57 @@ model User {
   formSessions       FormSession[]
   audits             AuditLog[]
   proposalRevisions  ProposalRevision[]
+
+  @@index([companyId])
+}
+
+model Company {
+  id         String      @id @default(cuid())
+  name       String
+  slug       String      @unique
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  users      User[]
+  formBlocks FormBlock[]
+}
+
+model FormBlock {
+  id          String         @id @default(cuid())
+  companyId   String
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  blockKey    String
+  title       String
+  description String?
+  order       Int
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  questions   FormQuestion[]
+
+  @@unique([companyId, blockKey])
+  @@index([companyId, active, order])
+}
+
+model FormQuestion {
+  id              String    @id @default(cuid())
+  blockId         String
+  block           FormBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  fieldId         String
+  label           String
+  type            String
+  placeholder     String?
+  helpText        String?
+  requiredDefault Boolean   @default(false)
+  optionsJson     String?
+  validationJson  String?
+  order           Int
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([blockId, fieldId])
+  @@index([blockId, active, order])
 }
 
 model Submission {
