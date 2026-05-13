@@ -3,14 +3,23 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
-import { blocos, defaultValues, type Field } from "@/lib/formSchema";
+import { buildDefaultValuesFromBlocks, type Block, type Field } from "@/lib/formSchema";
+import { mapTenantBlocksToFormBlocks, type TenantSchemaResponse } from "@/lib/formSchemaAdapter";
 import { listMissingMappedFieldIds } from "@/lib/preSalesValidationMap";
-import { avaliarRegras, PRE_SALES_INTERNAL_BLOCK_ID } from "@/lib/rulesEngine";
+import {
+  avaliarRegras,
+  listMissingRequiredFields,
+  PRE_SALES_INTERNAL_BLOCK_ID,
+} from "@/lib/rulesEngine";
 import {
   inputCompactClass,
-  labelCompactClass,
 } from "@/lib/uiClasses";
-import { parsePreSalesMeta, type PreSalesMeta, type PreSalesStage } from "@/lib/preSalesMeta";
+import {
+  parsePreSalesMeta,
+  PRE_SALES_META_KEY,
+  type PreSalesMeta,
+  type PreSalesStage,
+} from "@/lib/preSalesMeta";
 import { etapaPreVendasPt, statusPropostaPt } from "@/lib/uiLabels";
 
 type AuditSnapshot = {
@@ -129,6 +138,10 @@ export function ProposalForm({
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditPayload, setAuditPayload] = useState<AuditSnapshot | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [schemaBlocks, setSchemaBlocks] = useState<Block[]>([]);
+  const [schemaCompanyName, setSchemaCompanyName] = useState("");
+  const [schemaLoading, setSchemaLoading] = useState(true);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
   const [preSalesStage, setPreSalesStage] = useState<PreSalesStage>("DRAFTING");
   const [preSalesFeedback, setPreSalesFeedback] = useState<{
     lastComment?: string;
@@ -139,8 +152,8 @@ export function ProposalForm({
   }>({});
   const lastWorkspaceReset = useRef(0);
 
-  const { register, handleSubmit, control, reset } = useForm<Record<string, string>>({
-    defaultValues,
+  const { register, handleSubmit, control, reset, getValues } = useForm<Record<string, string>>({
+    defaultValues: {},
     mode: "onChange",
   });
 
@@ -152,27 +165,44 @@ export function ProposalForm({
       ) as Record<string, string>,
     [values],
   );
+  const schemaReady = !schemaLoading && !schemaError && schemaBlocks.length > 0;
   const rules = useMemo(() => avaliarRegras(normalizedValues), [normalizedValues]);
   const visibleBlocks = useMemo(() => {
-    const base = blocos.filter((b) => rules.visibleBlocks.has(b.id));
+    const base = schemaBlocks.filter((b) => rules.visibleBlocks.has(b.id));
     const showPreSalesInternalBlock =
       mode === "preSalesReview" ||
       userRole === "PRE_VENDAS" ||
       userRole === "ADMIN";
     if (showPreSalesInternalBlock && !base.some((b) => b.id === PRE_SALES_INTERNAL_BLOCK_ID)) {
-      const b21 = blocos.find((b) => b.id === PRE_SALES_INTERNAL_BLOCK_ID);
+      const b21 = schemaBlocks.find((b) => b.id === PRE_SALES_INTERNAL_BLOCK_ID);
       if (b21) return [...base, b21];
     }
     return base;
-  }, [rules.visibleBlocks, mode, userRole]);
+  }, [schemaBlocks, rules.visibleBlocks, mode, userRole]);
   const selectedBlock =
     visibleBlocks.find((b) => b.id === activeBlockId) ?? visibleBlocks[0];
   const selectedBlockIndex = selectedBlock
     ? visibleBlocks.findIndex((b) => b.id === selectedBlock.id)
     : -1;
+  const allowedFieldIds = useMemo(
+    () => new Set(schemaBlocks.flatMap((block) => block.fields.map((field) => field.id))),
+    [schemaBlocks],
+  );
+  const sanitizePayloadForSchema = useCallback(
+    (source: Record<string, string>) => {
+      const sanitized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(source)) {
+        if (allowedFieldIds.has(key) || key === PRE_SALES_META_KEY || key.startsWith("__")) {
+          sanitized[key] = value ?? "";
+        }
+      }
+      return sanitized;
+    },
+    [allowedFieldIds],
+  );
 
   const getBlockProgress = (blockId: string) => {
-    const block = blocos.find((b) => b.id === blockId);
+    const block = schemaBlocks.find((b) => b.id === blockId);
     if (!block) return { pct: 0, pendingRequired: 0, total: 0, filled: 0 };
     const requiredIds = block.fields
       .filter((f) => f.required || rules.requiredFields.has(f.id))
@@ -200,11 +230,46 @@ export function ProposalForm({
     });
   }, [selectedBlock, rules.requiredFields, showOnlyRequired, fieldSearch]);
 
+  const loadFormSchema = useCallback(async () => {
+    setSchemaLoading(true);
+    setSchemaError(null);
+    const res = await fetch("/api/forms/schema");
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      setSchemaBlocks([]);
+      setSchemaCompanyName("");
+      setSchemaError(err.error ?? "Falha ao carregar schema do formulario.");
+      setSchemaLoading(false);
+      return;
+    }
+    const payload = (await res.json()) as TenantSchemaResponse;
+    const nextBlocks = mapTenantBlocksToFormBlocks(payload.blocks);
+    setSchemaBlocks(nextBlocks);
+    setSchemaCompanyName(payload.company.name);
+    const current = getValues();
+    reset({ ...buildDefaultValuesFromBlocks(nextBlocks), ...current });
+    setActiveBlockId((prev) => {
+      if (nextBlocks.some((block) => block.id === prev)) return prev;
+      return nextBlocks[0]?.id ?? "bloco1";
+    });
+    setSchemaLoading(false);
+  }, [getValues, reset]);
+
+  useEffect(() => {
+    void loadFormSchema();
+  }, [loadFormSchema]);
+
+  useEffect(() => {
+    if (!visibleBlocks.length) return;
+    if (visibleBlocks.some((block) => block.id === activeBlockId)) return;
+    setActiveBlockId(visibleBlocks[0].id);
+  }, [visibleBlocks, activeBlockId]);
+
   useEffect(() => {
     if (!workspaceResetToken) return;
     if (workspaceResetToken === lastWorkspaceReset.current) return;
     lastWorkspaceReset.current = workspaceResetToken;
-    reset({ ...defaultValues });
+    reset({ ...buildDefaultValuesFromBlocks(schemaBlocks) });
     setCurrentSessionId(null);
     setSessionRevision(null);
     setProposalTitle("");
@@ -214,14 +279,14 @@ export function ProposalForm({
     setReadOnly(false);
     setBlockingErrors([]);
       setWarningsCollapsed(true);
-    setActiveBlockId("bloco1");
+    setActiveBlockId(schemaBlocks[0]?.id ?? "bloco1");
     setShowOnlyRequired(false);
     setFieldSearch("");
     setAuditOpen(false);
     setAuditPayload(null);
     setPreSalesStage("DRAFTING");
     setDownloadStatus("Area de trabalho limpa. Use Iniciar para registar uma nova proposta no servidor.");
-  }, [workspaceResetToken, reset]);
+  }, [workspaceResetToken, reset, schemaBlocks]);
 
 
   useEffect(() => {
@@ -272,7 +337,7 @@ export function ProposalForm({
         blockComments: preSales.blockComments,
         requestedFieldIds: preSales.requestedFieldIds ?? [],
       });
-      reset({ ...defaultValues, ...data });
+      reset({ ...buildDefaultValuesFromBlocks(schemaBlocks), ...data });
       setCurrentSessionId(session.id);
       setSessionRevision(session.revision);
       setProposalTitle(session.title);
@@ -302,7 +367,7 @@ export function ProposalForm({
 
       setDownloadStatus("Proposta carregada.");
     },
-    [reset],
+    [reset, schemaBlocks],
   );
 
   useEffect(() => {
@@ -314,11 +379,16 @@ export function ProposalForm({
   }, [resumeProposalId, loadProposalById, onResumeProposalIdConsumed]);
 
   const iniciarProposta = async () => {
+    if (!schemaReady) {
+      setDownloadStatus("Aguarde o carregamento do questionário da empresa.");
+      return;
+    }
     const title =
       proposalTitle.trim() ||
       normalizedValues.nome_interno_solicitacao?.trim() ||
       normalizedValues.cenario_atual_conectividade?.trim() ||
       `Proposta ${new Date().toLocaleString("pt-BR")}`;
+    const payloadToPersist = sanitizePayloadForSchema(normalizedValues);
     setDownloadStatus("Registrando proposta no servidor...");
     const res = await fetch("/api/forms", {
       method: "POST",
@@ -327,7 +397,7 @@ export function ProposalForm({
         title,
         clientName: clientName.trim() || undefined,
         opportunityRef: opportunityRef.trim() || undefined,
-        payload: normalizedValues,
+        payload: payloadToPersist,
         warnings: rules.warnings,
       }),
     });
@@ -340,12 +410,16 @@ export function ProposalForm({
       );
       return;
     }
-    const payload = (await res.json()) as { id: string };
+    const created = (await res.json()) as { id: string };
       setDownloadStatus("Proposta criada. Abrindo...");
-    router.replace(`/propostas/${encodeURIComponent(payload.id)}`);
+    router.replace(`/propostas/${encodeURIComponent(created.id)}`);
   };
 
   const pausarSalvar = async () => {
+    if (!schemaReady) {
+      setDownloadStatus("Aguarde o carregamento do questionário da empresa.");
+      return;
+    }
     if (isFormReadOnly) {
       setDownloadStatus("Proposta encerrada: não é possível pausar.");
       return;
@@ -363,6 +437,7 @@ export function ProposalForm({
       normalizedValues.nome_interno_solicitacao?.trim() ||
       normalizedValues.cenario_atual_conectividade?.trim() ||
       "Proposta sem titulo";
+    const payload = sanitizePayloadForSchema(normalizedValues);
     const res = await fetch(`/api/forms/${currentSessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -370,7 +445,7 @@ export function ProposalForm({
         title,
         clientName: clientName.trim() || null,
         opportunityRef: opportunityRef.trim() || null,
-        payload: normalizedValues,
+        payload,
         warnings: rules.warnings,
         status: "PAUSED",
         expectedRevision: sessionRevision,
@@ -395,6 +470,10 @@ export function ProposalForm({
   };
 
   const enviarParaValidacaoTecnica = async () => {
+    if (!schemaReady) {
+      setDownloadStatus("Aguarde o carregamento do questionário da empresa.");
+      return;
+    }
     if (!currentSessionId || sessionRevision === null) {
       setDownloadStatus("Recarregue a proposta antes de enviar para a fila do pre-vendas.");
       return;
@@ -405,6 +484,7 @@ export function ProposalForm({
       normalizedValues.nome_interno_solicitacao?.trim() ||
       normalizedValues.cenario_atual_conectividade?.trim() ||
       "Proposta sem titulo";
+    const payload = sanitizePayloadForSchema(normalizedValues);
 
     const res = await fetch(`/api/forms/${currentSessionId}`, {
       method: "PATCH",
@@ -413,7 +493,7 @@ export function ProposalForm({
         title,
         clientName: clientName.trim() || null,
         opportunityRef: opportunityRef.trim() || null,
-        payload: normalizedValues,
+        payload,
         warnings: rules.warnings,
         expectedRevision: sessionRevision,
         preSalesAction: "SUBMIT_FOR_PRE_SALES",
@@ -438,6 +518,10 @@ export function ProposalForm({
   };
 
   const finalizarProposta = async () => {
+    if (!schemaReady) {
+      setDownloadStatus("Aguarde o carregamento do questionário da empresa.");
+      return;
+    }
     if (isFormReadOnly) {
       setDownloadStatus("Proposta encerrada: finalização indisponível.");
       return;
@@ -456,6 +540,7 @@ export function ProposalForm({
       normalizedValues.nome_interno_solicitacao?.trim() ||
       normalizedValues.cenario_atual_conectividade?.trim() ||
       "Proposta sem titulo";
+    const payload = sanitizePayloadForSchema(normalizedValues);
 
     const res = await fetch(`/api/forms/${currentSessionId}`, {
       method: "PATCH",
@@ -464,7 +549,7 @@ export function ProposalForm({
         title,
         clientName: clientName.trim() || null,
         opportunityRef: opportunityRef.trim() || null,
-        payload: normalizedValues,
+        payload,
         warnings: rules.warnings,
         status: "FINALIZED",
         expectedRevision: sessionRevision,
@@ -515,15 +600,11 @@ export function ProposalForm({
     [normalizedValues],
   );
   const missingRequiredForPreSales = useMemo(() => {
-    const requiredBySchema = blocos
-      .filter((b) => rules.visibleBlocks.has(b.id))
-      .flatMap((b) => b.fields)
-      .filter((f) => f.required)
-      .map((f) => f.id);
-    const requiredByRules = Array.from(rules.requiredFields);
-    const allRequired = new Set([...requiredBySchema, ...requiredByRules]);
-    return Array.from(allRequired).filter((fieldId) => !String(normalizedValues[fieldId] ?? "").trim());
-  }, [rules.visibleBlocks, rules.requiredFields, normalizedValues]);
+    return listMissingRequiredFields(normalizedValues, {
+      excludeBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+      schemaBlocks,
+    });
+  }, [normalizedValues, schemaBlocks]);
   const missingMappedForPreSales = useMemo(
     () => {
       const visibleFieldIds = new Set(
@@ -540,11 +621,11 @@ export function ProposalForm({
   const requestedBlockIdsFromFieldsSet = useMemo(() => {
     const ids = new Set<string>();
     for (const fieldId of requestedFieldIdsSet) {
-      const block = blocos.find((b) => b.fields.some((f) => f.id === fieldId));
+      const block = schemaBlocks.find((b) => b.fields.some((f) => f.id === fieldId));
       if (block) ids.add(block.id);
     }
     return ids;
-  }, [requestedFieldIdsSet]);
+  }, [requestedFieldIdsSet, schemaBlocks]);
   const requestedBlockIdsFallbackSet = useMemo(() => {
     const ids = new Set<string>();
     for (const k of Object.keys(preSalesFeedback.blockComments ?? {})) {
@@ -573,9 +654,14 @@ export function ProposalForm({
     },
     [requestedFieldIdsSet, onReviewRequestedFieldIdsChange],
   );
-  const canGenerateDocument = !isPreSalesReviewMode && (isFinalized || !isFormReadOnly);
+  const isSchemaEmpty = !schemaLoading && !schemaError && schemaBlocks.length === 0;
+  const canGenerateDocument = schemaReady && !isPreSalesReviewMode && (isFinalized || !isFormReadOnly);
 
   const onSubmit = async (data: Record<string, string>) => {
+    if (!schemaReady) {
+      setDownloadStatus("Aguarde o carregamento do questionário da empresa.");
+      return;
+    }
     if (isFormReadOnly && !isFinalized) {
       setDownloadStatus("Proposta encerrada: geracao bloqueada.");
       return;
@@ -588,15 +674,18 @@ export function ProposalForm({
       setDownloadStatus("A proposta precisa de parecer técnico aprovado pelo pré-vendas antes da finalização.");
       return;
     }
-    const requiredBySchema = blocos
+    const payload = sanitizePayloadForSchema(data);
+    const requiredBySchema = schemaBlocks
       .filter((b) => rules.visibleBlocks.has(b.id))
       .flatMap((b) => b.fields)
       .filter((f) => f.required)
       .map((f) => f.id);
-    const requiredByRules = Array.from(rules.requiredFields);
+    const requiredByRules = Array.from(rules.requiredFields).filter((fieldId) =>
+      allowedFieldIds.has(fieldId),
+    );
     const allRequired = new Set([...requiredBySchema, ...requiredByRules]);
     const missing = Array.from(allRequired).filter(
-      (fieldId) => !String(data[fieldId] ?? "").trim(),
+      (fieldId) => !String(payload[fieldId] ?? "").trim(),
     );
 
     const submitErrors = isFinalized
@@ -621,7 +710,7 @@ export function ProposalForm({
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        data,
+        data: payload,
         sessionId: currentSessionId ?? undefined,
         expectedRevision: currentSessionId ? sessionRevision : undefined,
       }),
@@ -716,7 +805,7 @@ export function ProposalForm({
               <button
                 type="button"
                 onClick={() => void iniciarProposta()}
-                disabled={readOnly || Boolean(currentSessionId) || !newProposalDraft}
+                disabled={readOnly || Boolean(currentSessionId) || !newProposalDraft || !schemaReady}
                 className={topBarBtnPrimary}
               >
                 Iniciar
@@ -727,7 +816,7 @@ export function ProposalForm({
                 <button
                   type="button"
                   onClick={() => void pausarSalvar()}
-                  disabled={isFormReadOnly || !currentSessionId}
+                  disabled={isFormReadOnly || !currentSessionId || !schemaReady}
                   title={!currentSessionId ? "Disponivel apos Iniciar" : undefined}
                   className={topBarBtnBase}
                 >
@@ -737,6 +826,7 @@ export function ProposalForm({
                   type="button"
                   onClick={() => void enviarParaValidacaoTecnica()}
                   disabled={
+                    !schemaReady ||
                     isFormReadOnly ||
                     !currentSessionId ||
                     !(
@@ -784,6 +874,29 @@ export function ProposalForm({
           placeholder="CRM / oportunidade"
         />
       </div>
+
+      {schemaLoading ? (
+        <div className="mb-2 rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 text-xs text-surface-700">
+          Carregando questionário da empresa...
+        </div>
+      ) : null}
+      {schemaError ? (
+        <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <p>{schemaError}</p>
+          <button
+            type="button"
+            onClick={() => void loadFormSchema()}
+            className="mt-2 rounded-md border border-red-300 bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-900"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+      {isSchemaEmpty ? (
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Nenhum bloco ativo foi configurado para a empresa{schemaCompanyName ? ` ${schemaCompanyName}` : ""}.
+        </div>
+      ) : null}
 
       {preSalesStage === "CHANGES_REQUESTED" && preSalesFeedback.lastComment ? (
         <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
@@ -856,7 +969,7 @@ export function ProposalForm({
         </div>
       )}
 
-      {rules.warnings.length > 0 && totalFilledFields >= 5 && (
+      {schemaReady && rules.warnings.length > 0 && totalFilledFields >= 5 && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xs font-semibold text-amber-700">Alertas de regra ({rules.warnings.length})</h2>
@@ -879,6 +992,7 @@ export function ProposalForm({
         </div>
       )}
 
+      {schemaReady ? (
       <form onSubmit={handleSubmit(onSubmit)} className="mt-0.5 flex min-h-0 flex-1 flex-col">
         <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-[minmax(200px,16rem)_1fr]">
           <aside className="min-h-0 overflow-y-auto rounded-lg border border-surface-200/80 bg-surface-50/50 p-1.5 shadow-sm">
@@ -1010,7 +1124,7 @@ export function ProposalForm({
                 className="rounded-md bg-surface-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-surface-800 disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
                 onClick={() => void finalizarProposta()}
-                disabled={isFormReadOnly}
+                disabled={isFormReadOnly || !schemaReady}
               >
                 Finalizar proposta
               </button>
@@ -1055,6 +1169,7 @@ export function ProposalForm({
           )}
         </div>
       </form>
+      ) : null}
     </div>
   );
 }

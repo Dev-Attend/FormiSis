@@ -6,7 +6,8 @@ import { useParams } from "next/navigation";
 import { AppCard } from "@/components/AppCard";
 import { AppShell } from "@/components/AppShell";
 import { ProposalForm } from "@/components/ProposalForm";
-import { blocos } from "@/lib/formSchema";
+import type { Block } from "@/lib/formSchema";
+import { mapTenantBlocksToFormBlocks, type TenantSchemaResponse } from "@/lib/formSchemaAdapter";
 import { listMissingMappedEvidence, listMissingMappedFieldIds } from "@/lib/preSalesValidationMap";
 import { avaliarRegras } from "@/lib/rulesEngine";
 import {
@@ -47,6 +48,7 @@ export default function PreVendasValidacaoPorIdPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [payload, setPayload] = useState<Record<string, string>>({});
+  const [schemaBlocks, setSchemaBlocks] = useState<Block[]>([]);
   const [stage, setStage] = useState<PreSalesStage>("DRAFTING");
   const [checklist, setChecklist] = useState<PreSalesChecklist>({ ...defaultPreSalesChecklist });
   const [comment, setComment] = useState("");
@@ -56,7 +58,11 @@ export default function PreVendasValidacaoPorIdPage() {
     if (!id) return;
     setLoading(true);
     setError("");
-    const [meRes, formRes] = await Promise.all([fetch("/api/auth/me"), fetch(`/api/forms/${id}`)]);
+    const [meRes, formRes, schemaRes] = await Promise.all([
+      fetch("/api/auth/me"),
+      fetch(`/api/forms/${id}`),
+      fetch("/api/forms/schema"),
+    ]);
     let reviewer = false;
     if (meRes.ok) {
       const me = (await meRes.json()) as { user: { role: string } };
@@ -68,17 +74,26 @@ export default function PreVendasValidacaoPorIdPage() {
       setLoading(false);
       return;
     }
+    if (!schemaRes.ok) {
+      setError("Falha ao carregar schema do formulario.");
+      setLoading(false);
+      return;
+    }
+    const schemaPayload = (await schemaRes.json()) as TenantSchemaResponse;
+    const blocks = mapTenantBlocksToFormBlocks(schemaPayload.blocks);
+    setSchemaBlocks(blocks);
+
     const body = (await formRes.json()) as { session: SessionPayload };
     setSession(body.session);
     const p = JSON.parse(body.session.payloadJson || "{}") as Record<string, string>;
     setPayload(p);
     const rules = avaliarRegras(p);
     const blockIds = new Set(
-      blocos.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
+      blocks.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
     );
     if (reviewer) blockIds.add(PRE_SALES_INTERNAL_BLOCK_ID);
     const visibleFieldIds = new Set(
-      blocos.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
+      blocks.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
     );
     const meta = parsePreSalesMeta(p);
     setStage(meta.stage);
@@ -108,32 +123,33 @@ export default function PreVendasValidacaoPorIdPage() {
           userRole === "PRE_VENDAS" || userRole === "ADMIN"
             ? [PRE_SALES_INTERNAL_BLOCK_ID]
             : undefined,
+        schemaBlocks,
       }),
-    [payload, userRole],
+    [payload, userRole, schemaBlocks],
   );
   const missingMapped = useMemo(() => {
     const rules = avaliarRegras(payload);
     const blockIds = new Set(
-      blocos.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
+      schemaBlocks.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
     );
     if (userRole === "PRE_VENDAS" || userRole === "ADMIN") {
       blockIds.add(PRE_SALES_INTERNAL_BLOCK_ID);
     }
     const visibleFieldIds = new Set(
-      blocos.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
+      schemaBlocks.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
     );
     return listMissingMappedEvidence(payload, visibleFieldIds);
-  }, [payload, userRole]);
+  }, [payload, userRole, schemaBlocks]);
   const cannotApproveTechnical = missingRequired.length > 0 || missingMapped.length > 0;
   const fieldInfoById = useMemo(() => {
     const m = new Map<string, { block: string; label: string }>();
-    for (const b of blocos) {
+    for (const b of schemaBlocks) {
       for (const f of b.fields) {
         m.set(f.id, { block: b.title, label: f.label });
       }
     }
     return m;
-  }, []);
+  }, [schemaBlocks]);
 
   const saveDraft = async () => {
     if (!session || !isReviewer) return;

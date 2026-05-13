@@ -22,7 +22,10 @@ export type Field = {
 
 export type Block = {
   id: string;
+  key?: string;
   title: string;
+  description?: string | null;
+  order?: number;
   fields: Field[];
 };
 
@@ -545,6 +548,9 @@ export const blocos: Block[] = [
   },
 ];
 
-export const defaultValues = Object.fromEntries(
-  blocos.flatMap((b) => b.fields.map((f) => [f.id, ""])),
-) as Record<string, string>;
+export const buildDefaultValuesFromBlocks = (blocks: Block[]) =>
+  Object.fromEntries(
+    blocks.flatMap((b) => b.fields.map((f) => [f.id, ""])),
+  ) as Record<string, string>;
+
+export const defaultValues = buildDefaultValuesFromBlocks(blocos);
