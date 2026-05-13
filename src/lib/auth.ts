@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-export type UserRole = "ADMIN" | "COMERCIAL" | "PRE_VENDAS" | "LEITURA";
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "COMERCIAL" | "PRE_VENDAS" | "LEITURA";
 
 export type AuthResult =
   | {

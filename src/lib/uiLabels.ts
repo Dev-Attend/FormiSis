@@ -1,4 +1,4 @@
-/** Rotulos em portugues para estados e perfis exibidos na interface. */
+﻿/** Rotulos em portugues para estados e perfis exibidos na interface. */
 
 export function statusPropostaPt(status: string) {
   const map: Record<string, string> = {
@@ -13,9 +13,10 @@ export function statusPropostaPt(status: string) {
 
 export function perfilUsuarioPt(role: string) {
   const map: Record<string, string> = {
-    ADMIN: "Administração",
+    SUPER_ADMIN: "Super administracao",
+    ADMIN: "Administracao",
     COMERCIAL: "Comercial",
-    PRE_VENDAS: "Pré-vendas",
+    PRE_VENDAS: "Pre-vendas",
     LEITURA: "Somente leitura",
   };
   return map[role] ?? role;
@@ -23,10 +24,10 @@ export function perfilUsuarioPt(role: string) {
 
 export function etapaPreVendasPt(stage: string) {
   const map: Record<string, string> = {
-    DRAFTING: "Em preparação comercial",
-    UNDER_PRE_SALES_REVIEW: "Em validação técnica (Pré-vendas)",
-    CHANGES_REQUESTED: "Ajustes solicitados pelo Pré-vendas",
-    APPROVED_PRE_SALES: "Parecer técnico aprovado",
+    DRAFTING: "Em preparacao comercial",
+    UNDER_PRE_SALES_REVIEW: "Em validacao tecnica (Pre-vendas)",
+    CHANGES_REQUESTED: "Ajustes solicitados pelo Pre-vendas",
+    APPROVED_PRE_SALES: "Parecer tecnico aprovado",
   };
   return map[stage] ?? stage;
 }
