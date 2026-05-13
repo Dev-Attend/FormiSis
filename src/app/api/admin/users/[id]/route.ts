@@ -45,6 +45,7 @@ export async function PATCH(
     name?: string;
     email?: string;
     role?: UserRole;
+    companyId?: string;
     active?: boolean;
     passwordHash?: string;
   } = {};
@@ -52,6 +53,19 @@ export async function PATCH(
   if (data.name !== undefined) update.name = data.name;
   if (data.email !== undefined) update.email = data.email;
   if (data.role !== undefined) update.role = data.role;
+  if (data.companyId !== undefined) {
+    const company = await db.company.findUnique({
+      where: { id: data.companyId },
+      select: { id: true, active: true },
+    });
+    if (!company || !company.active) {
+      return NextResponse.json(
+        { error: "Empresa informada inexistente ou inativa." },
+        { status: 400 },
+      );
+    }
+    update.companyId = data.companyId;
+  }
   if (data.active !== undefined) update.active = data.active;
   if (data.password !== undefined) {
     update.passwordHash = await bcrypt.hash(data.password, 12);
@@ -71,8 +85,24 @@ export async function PATCH(
         email: true,
         role: true,
         active: true,
+        companyId: true,
         createdAt: true,
         updatedAt: true,
+        company: { select: { id: true, name: true, slug: true } },
+      },
+    });
+    await db.auditLog.create({
+      data: {
+        action: "USER_UPDATED",
+        resourceType: "User",
+        resourceId: user.id,
+        detailsJson: JSON.stringify({
+          fields: Object.keys(update),
+          role: user.role,
+          active: user.active,
+          companyId: user.companyId,
+        }),
+        userId: auth.user.id,
       },
     });
     return NextResponse.json({ user });

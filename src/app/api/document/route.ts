@@ -2,6 +2,8 @@ import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { blocos } from "@/lib/formSchema";
+import { mapTenantBlocksToFormBlocks } from "@/lib/formSchemaAdapter";
+import { loadTenantFormSchemaByCompanyId } from "@/lib/formSchemaService";
 import { generateTechnicalPdf } from "@/lib/generateTechnicalPdf";
 import { avaliarRegras } from "@/lib/rulesEngine";
 import { requireApiAccess } from "@/lib/auth";
@@ -12,7 +14,12 @@ import { canManageProposal } from "@/lib/proposalPersistence";
 import { canTransition, type ProposalStatus } from "@/lib/proposalWorkflow";
 import { parsePreSalesMeta } from "@/lib/preSalesMeta";
 
-function flatLines(data: Record<string, string>, warnings: string[], errors: string[]) {
+function flatLines(
+  data: Record<string, string>,
+  warnings: string[],
+  errors: string[],
+  schemaBlocks: typeof blocos,
+) {
   const lines: string[] = [];
   lines.push("DOCUMENTO TECNICO AUTOMATICO - FORMSIS");
   lines.push("");
@@ -21,7 +28,7 @@ function flatLines(data: Record<string, string>, warnings: string[], errors: str
   errors.forEach((e) => lines.push(`ERRO: ${e}`));
   lines.push("");
   lines.push("RESPOSTAS DO FORMULARIO (POR BLOCO)");
-  blocos.forEach((bloco) => {
+  schemaBlocks.forEach((bloco) => {
     lines.push("");
     lines.push(bloco.title);
     bloco.fields.forEach((field) => {
@@ -76,18 +83,40 @@ export async function POST(request: NextRequest) {
     }
     const formData = body.data;
 
+  const resolveSchemaBlocks = async (companyId?: string | null) => {
+    if (!companyId) return blocos;
+    const tenantSchema = await loadTenantFormSchemaByCompanyId(companyId);
+    if (!tenantSchema) return blocos;
+    if (tenantSchema.blocks.length === 0) return [] as typeof blocos;
+    return mapTenantBlocksToFormBlocks(tenantSchema.blocks);
+  };
+
+  let schemaBlocks = await resolveSchemaBlocks(auth.user.companyId);
+  if (schemaBlocks.length === 0) {
+    return NextResponse.json(
+      { error: "Empresa sem blocos ativos de formulario." },
+      { status: 400 },
+    );
+  }
+
   const outputFormat = formData._output_format === "pdf" ? "pdf" : "docx";
-  const rules = avaliarRegras(formData);
-  const requiredBySchema = blocos
+  let rules = avaliarRegras(formData);
+  let requiredBySchema = schemaBlocks
     .filter((b) => rules.visibleBlocks.has(b.id))
     .flatMap((b) => b.fields)
     .filter((f) => f.required)
     .map((f) => f.id);
-  const allRequired = new Set([...requiredBySchema, ...Array.from(rules.requiredFields)]);
-  const missing = Array.from(allRequired).filter(
+  let schemaFieldIds = new Set(
+    schemaBlocks.flatMap((b) => b.fields.map((f) => f.id)),
+  );
+  let requiredByRules = Array.from(rules.requiredFields).filter((fieldId) =>
+    schemaFieldIds.has(fieldId),
+  );
+  let allRequired = new Set([...requiredBySchema, ...requiredByRules]);
+  let missing = Array.from(allRequired).filter(
     (fieldId) => !String(formData[fieldId] ?? "").trim(),
   );
-  const allErrors = [...rules.errors, ...missing.map((f) => `Campo obrigatório não preenchido: ${f}`)];
+  let allErrors = [...rules.errors, ...missing.map((f) => `Campo obrigatório não preenchido: ${f}`)];
 
   let proposalSession: {
     id: string;
@@ -101,7 +130,14 @@ export async function POST(request: NextRequest) {
   if (body.sessionId) {
     const session = await db.formSession.findUnique({
       where: { id: body.sessionId },
-      select: { id: true, revision: true, status: true, createdById: true, payloadJson: true },
+      select: {
+        id: true,
+        revision: true,
+        status: true,
+        createdById: true,
+        payloadJson: true,
+        createdBy: { select: { companyId: true } },
+      },
     });
     if (!session) {
       return NextResponse.json({ error: "Proposta não encontrada para finalização." }, { status: 404 });
@@ -109,6 +145,14 @@ export async function POST(request: NextRequest) {
     if (!canManageProposal(auth.user.role, session.createdById, auth.user.id)) {
       return NextResponse.json({ error: "Sem permissao para finalizar esta proposta." }, { status: 403 });
     }
+    const ownerSchemaBlocks = await resolveSchemaBlocks(session.createdBy.companyId);
+    if (ownerSchemaBlocks.length === 0) {
+      return NextResponse.json(
+        { error: "Empresa da proposta sem blocos ativos de formulario." },
+        { status: 400 },
+      );
+    }
+    schemaBlocks = ownerSchemaBlocks;
     const isTerminalSession =
       session.status === "FINALIZED" || session.status === "ARCHIVED";
     skipFinalizeAndRuleBlock = isTerminalSession;
@@ -154,6 +198,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  rules = avaliarRegras(formData);
+  requiredBySchema = schemaBlocks
+    .filter((b) => rules.visibleBlocks.has(b.id))
+    .flatMap((b) => b.fields)
+    .filter((f) => f.required)
+    .map((f) => f.id);
+  schemaFieldIds = new Set(schemaBlocks.flatMap((b) => b.fields.map((f) => f.id)));
+  requiredByRules = Array.from(rules.requiredFields).filter((fieldId) =>
+    schemaFieldIds.has(fieldId),
+  );
+  allRequired = new Set([...requiredBySchema, ...requiredByRules]);
+  missing = Array.from(allRequired).filter(
+    (fieldId) => !String(formData[fieldId] ?? "").trim(),
+  );
+  allErrors = [...rules.errors, ...missing.map((f) => `Campo obrigatório não preenchido: ${f}`)];
+
   if (!skipFinalizeAndRuleBlock && allErrors.length > 0) {
     await db.auditLog.create({
       data: {
@@ -171,7 +231,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const lines = flatLines(formData, rules.warnings, rules.errors);
+  const lines = flatLines(formData, rules.warnings, rules.errors, schemaBlocks);
   const outputFile = outputFormat === "pdf" ? "documento-tecnico.pdf" : "documento-tecnico.docx";
 
   const submission = await db.submission.create({

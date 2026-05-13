@@ -5,7 +5,17 @@ import { db } from "@/lib/db";
 export type UserRole = "ADMIN" | "COMERCIAL" | "PRE_VENDAS" | "LEITURA";
 
 export type AuthResult =
-  | { ok: true; user: { id: string; email: string; role: UserRole; name: string } }
+  | {
+      ok: true;
+      user: {
+        id: string;
+        email: string;
+        role: UserRole;
+        name: string;
+        companyId: string | null;
+        company: { id: string; name: string; slug: string } | null;
+      };
+    }
   | { ok: false; response: NextResponse };
 
 const SESSION_COOKIE = "formsis_session";
@@ -95,7 +105,10 @@ export async function requireApiAccess(
     };
   }
 
-  const user = await db.user.findUnique({ where: { email: session.email } });
+  const user = await db.user.findUnique({
+    where: { email: session.email },
+    include: { company: { select: { id: true, name: true, slug: true, active: true } } },
+  });
 
   if (!user || !user.active) {
     return {
@@ -113,7 +126,20 @@ export async function requireApiAccess(
 
   return {
     ok: true,
-    user: { id: user.id, email: user.email, role: user.role as UserRole, name: user.name },
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role as UserRole,
+      name: user.name,
+      companyId: user.companyId,
+      company: user.company
+        ? {
+            id: user.company.id,
+            name: user.company.name,
+            slug: user.company.slug,
+          }
+        : null,
+    },
   };
 }
 
@@ -123,6 +149,7 @@ export async function getServerSessionUser(): Promise<{
   email: string;
   role: UserRole;
   name: string;
+  companyId: string | null;
 } | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
@@ -131,5 +158,11 @@ export async function getServerSessionUser(): Promise<{
   if (!session) return null;
   const user = await db.user.findUnique({ where: { email: session.email } });
   if (!user || !user.active) return null;
-  return { id: user.id, email: user.email, role: user.role as UserRole, name: user.name };
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role as UserRole,
+    name: user.name,
+    companyId: user.companyId,
+  };
 }

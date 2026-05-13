@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { requireApiAccess } from "@/lib/auth";
 import { canManageProposal, canViewProposal } from "@/lib/proposalPersistence";
 import { blocos } from "@/lib/formSchema";
+import { mapTenantBlocksToFormBlocks } from "@/lib/formSchemaAdapter";
+import { loadTenantFormSchemaByCompanyId } from "@/lib/formSchemaService";
 import { canTransition, type ProposalStatus } from "@/lib/proposalWorkflow";
 import { listMissingMappedEvidence, listMissingMappedFieldIds } from "@/lib/preSalesValidationMap";
 import {
@@ -24,17 +26,18 @@ type PreSalesAction = "SUBMIT_FOR_PRE_SALES" | "APPROVE_TECHNICAL" | "REQUEST_CH
 
 function getVisibleFieldIds(
   payload: Record<string, string>,
+  schemaBlocks: typeof blocos,
   opts?: { includePreSalesInternalBlock?: boolean },
 ) {
   const rules = avaliarRegras(payload);
   const blockIds = new Set(
-    blocos.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
+    schemaBlocks.filter((b) => rules.visibleBlocks.has(b.id)).map((b) => b.id),
   );
   if (opts?.includePreSalesInternalBlock) {
     blockIds.add(PRE_SALES_INTERNAL_BLOCK_ID);
   }
   return new Set(
-    blocos.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
+    schemaBlocks.filter((b) => blockIds.has(b.id)).flatMap((b) => b.fields.map((f) => f.id)),
   );
 }
 
@@ -101,6 +104,24 @@ export async function PATCH(
     return NextResponse.json({ error: "Sem permissao para alterar esta proposta." }, { status: 403 });
   }
 
+  const owner = await db.user.findUnique({
+    where: { id: session.createdById },
+    select: { companyId: true },
+  });
+  const schemaCompanyId = owner?.companyId ?? auth.user.companyId;
+  let schemaBlocks = blocos;
+  if (schemaCompanyId) {
+    const tenantSchema = await loadTenantFormSchemaByCompanyId(schemaCompanyId);
+    if (tenantSchema?.blocks.length) {
+      schemaBlocks = mapTenantBlocksToFormBlocks(tenantSchema.blocks);
+    } else if (tenantSchema && tenantSchema.blocks.length === 0) {
+      return NextResponse.json(
+        { error: "Empresa sem blocos ativos de formulario." },
+        { status: 400 },
+      );
+    }
+  }
+
   if (body.expectedRevision === undefined) {
     return NextResponse.json(
       { error: "expectedRevision obrigatório para salvar alterações.", currentRevision: session.revision },
@@ -162,6 +183,7 @@ export async function PATCH(
     const payloadForValidation = body.payload ? { ...body.payload } : { ...nextPayloadObj };
     const missingRequired = listMissingRequiredFields(payloadForValidation, {
       excludeBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+      schemaBlocks,
     });
     if (missingRequired.length > 0) {
       return NextResponse.json(
@@ -174,7 +196,7 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    const visibleFieldIds = getVisibleFieldIds(payloadForValidation);
+    const visibleFieldIds = getVisibleFieldIds(payloadForValidation, schemaBlocks);
     const missingMappedForSubmit = listMissingMappedFieldIds(payloadForValidation, visibleFieldIds);
     if (missingMappedForSubmit.length > 0) {
       return NextResponse.json(
@@ -209,8 +231,9 @@ export async function PATCH(
     }
     const requestedFromRequired = listMissingRequiredFields(nextPayloadObj, {
       excludeBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+      schemaBlocks,
     });
-    const visibleFieldIds = getVisibleFieldIds(nextPayloadObj);
+    const visibleFieldIds = getVisibleFieldIds(nextPayloadObj, schemaBlocks);
     const requestedFromMapped = listMissingMappedFieldIds(nextPayloadObj, visibleFieldIds);
     const requestedFieldIds =
       body.preSalesRequestedFieldIds && body.preSalesRequestedFieldIds.length > 0
@@ -248,6 +271,7 @@ export async function PATCH(
     }
     const missingReqApprove = listMissingRequiredFields(nextPayloadObj, {
       extraRequiredBlockIds: [PRE_SALES_INTERNAL_BLOCK_ID],
+      schemaBlocks,
     });
     if (missingReqApprove.length > 0) {
       return NextResponse.json(
@@ -260,7 +284,7 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    const visibleFieldIds = getVisibleFieldIds(nextPayloadObj, {
+    const visibleFieldIds = getVisibleFieldIds(nextPayloadObj, schemaBlocks, {
       includePreSalesInternalBlock: true,
     });
     const missingMappedApprove = listMissingMappedEvidence(nextPayloadObj, visibleFieldIds);

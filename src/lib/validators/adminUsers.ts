@@ -5,6 +5,7 @@ export const createUserBodySchema = z.object({
   email: z.string().email().max(255).toLowerCase(),
   password: z.string().min(8).max(200),
   role: z.enum(["ADMIN", "COMERCIAL", "PRE_VENDAS", "LEITURA"]),
+  companyId: z.string().min(1).max(64).optional(),
 });
 
 export const patchUserBodySchema = z
@@ -12,6 +13,7 @@ export const patchUserBodySchema = z
     name: z.string().min(1).max(120).optional(),
     email: z.string().email().max(255).toLowerCase().optional(),
     role: z.enum(["ADMIN", "COMERCIAL", "PRE_VENDAS", "LEITURA"]).optional(),
+    companyId: z.string().min(1).max(64).optional(),
     active: z.boolean().optional(),
     password: z.string().min(8).max(200).optional(),
   })

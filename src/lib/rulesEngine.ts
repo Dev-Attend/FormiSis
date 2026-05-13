@@ -1,4 +1,4 @@
-import { blocos, toFieldId } from "./formSchema";
+import { blocos, toFieldId, type Block } from "./formSchema";
 
 /** Bloco interno do Pre-vendas (nao entra no conjunto comercial 1-20 de `visibleBlocks`). */
 export const PRE_SALES_INTERNAL_BLOCK_ID = "bloco21";
@@ -264,6 +264,8 @@ export type ListMissingRequiredOptions = {
   excludeBlockIds?: string[];
   /** Inclui obrigatorios destes blocos mesmo fora de `visibleBlocks` (ex.: aprovar parecer no bloco 21). */
   extraRequiredBlockIds?: string[];
+  /** Permite usar schema dinamico por tenant mantendo compatibilidade com o schema legado. */
+  schemaBlocks?: Block[];
 };
 
 /** Obrigatorios do schema nos blocos visiveis + extras + exigidos dinamicamente pelas regras. */
@@ -274,15 +276,22 @@ export function listMissingRequiredFields(
   const rules = avaliarRegras(data);
   const exclude = new Set(opts?.excludeBlockIds ?? []);
   const extra = new Set(opts?.extraRequiredBlockIds ?? []);
-  const requiredBySchema = blocos
-    .filter(
-      (b) =>
-        !exclude.has(b.id) &&
-        (rules.visibleBlocks.has(b.id) || extra.has(b.id)),
-    )
+  const schemaBlocks = opts?.schemaBlocks ?? blocos;
+  const eligibleBlocks = schemaBlocks.filter(
+    (b) =>
+      !exclude.has(b.id) &&
+      (rules.visibleBlocks.has(b.id) || extra.has(b.id)),
+  );
+  const eligibleFieldIds = new Set(
+    eligibleBlocks.flatMap((b) => b.fields.map((f) => f.id)),
+  );
+  const requiredBySchema = eligibleBlocks
     .flatMap((b) => b.fields)
     .filter((f) => f.required)
     .map((f) => f.id);
-  const allRequired = new Set([...requiredBySchema, ...rules.requiredFields]);
+  const requiredByRules = Array.from(rules.requiredFields).filter((fieldId) =>
+    eligibleFieldIds.has(fieldId),
+  );
+  const allRequired = new Set([...requiredBySchema, ...requiredByRules]);
   return Array.from(allRequired).filter((fieldId) => !String(data[fieldId] ?? "").trim());
 }
