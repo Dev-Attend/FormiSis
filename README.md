@@ -1,35 +1,35 @@
-﻿# FormiSis â€” AI Context README
+# FormiSis – AI Context README
 
 ## 1. Project Identity & Context
 
 | Campo | Detalhe |
 |---|---|
 | **Nome** | FormiSis |
-| **PropÃ³sito** | Sistema interno de levantamento tÃ©cnico-comercial para propostas de conectividade (Starlink/rÃ¡dio/fibra), cobrindo qualificaÃ§Ã£o de demanda â†’ geraÃ§Ã£o de documento final. |
-| **Problema resolvido** | Elimina formulÃ¡rios manuais dispersos substituindo por um fluxo digital estruturado com validaÃ§Ã£o de regras de negÃ³cio em tempo real, auditoria completa e geraÃ§Ã£o de documentos tÃ©cnicos. |
-| **PÃºblico** | UsuÃ¡rios internos da Attend: Comercial, PrÃ©-vendas, Leitura, Admin. |
+| **Propósito** | Sistema interno de levantamento técnico-comercial para propostas de conectividade (Starlink/rádio/fibra), cobrindo qualificação de demanda → geração de documento final. |
+| **Problema resolvido** | Elimina formulários manuais dispersos substituindo por um fluxo digital estruturado com validação de regras de negócio em tempo real, auditoria completa e geração de documentos técnicos. |
+| **Público** | Usuários internos da Attend: Comercial, Pré-vendas, Leitura, Admin. |
 
 ---
 
 ## 2. Tech Stack & Environment
 
-| Camada | Tecnologia | VersÃ£o |
+| Camada | Tecnologia | Versão |
 |---|---|---|
 | Framework | Next.js (App Router) | `16.2.4` |
 | Runtime | React | `19.2.4` |
 | Linguagem | TypeScript | `^5` |
 | ORM | Prisma | `^6.19.3` |
 | Banco de dados | SQLite (dev) | via `file:./dev.db` |
-| AutenticaÃ§Ã£o | JWT via `jose` | `^6.2.2` â€” **sem NextAuth** |
+| Autenticação | JWT via `jose` | `^6.2.2` – **sem NextAuth** |
 | Forms | `react-hook-form` + `@hookform/resolvers` | `^7` / `^5` |
-| ValidaÃ§Ã£o de schema | Zod | `^4.3.6` |
-| GeraÃ§Ã£o de documentos | `docx` + `pdf-lib` | `^9` / `^1.17` |
+| Validação de schema | Zod | `^4.3.6` |
+| Geração de documentos | `docx` + `pdf-lib` | `^9` / `^1.17` |
 | Styling | Tailwind CSS v4 | `^4` (via PostCSS) |
 | Logging | Pino | `^10.3.1` |
 | Testes | Vitest | `^4.1.5` |
 | Porta dev | `3001` | `npm run dev` |
 
-> **CRÃTICO:** Este projeto usa **Next.js 16** com App Router. APIs, convenÃ§Ãµes de roteamento e comportamento de Server/Client Components diferem significativamente do Next.js 13-15. Antes de escrever qualquer cÃ³digo Next.js, leia `node_modules/next/dist/docs/`.
+> **CRÍTICO:** Este projeto usa **Next.js 16** com App Router. APIs, convenções de roteamento e comportamento de Server/Client Components diferem significativamente do Next.js 13-15. Antes de escrever qualquer código Next.js, leia `node_modules/next/dist/docs/`.
 
 ---
 
@@ -106,32 +106,32 @@ requireApiAccess(request, allowedRoles[])
   -> valida JWT, usuario ativo e role permitida
 ```
 
-### Questionarios Dinamicos por Empresa / Multi-tenancy
+### Questionários Dinâmicos por Empresa / Multi-tenancy
 
-O FormiSis suporta multiplas empresas (tenants). Cada usuario pertence a uma empresa via `User.companyId`, e o formulario carregado depende da empresa do usuario autenticado.
+O FormiSis suporta múltiplas empresas (tenants). Cada usuário pertence a uma empresa via `User.companyId`, e o formulário carregado depende da empresa do usuário autenticado.
 
 O mesmo bloco pode ter perguntas diferentes por empresa. Exemplo: o `bloco1` da Attend pode ter um conjunto de perguntas e o `bloco1` da V8 outro conjunto.
 
-Novas empresas podem ter blocos e perguntas proprios por dados no banco (`Company`, `FormBlock`, `FormQuestion`) e seed/configuracao, sem alteracao de codigo-fonte para cadastrar perguntas.
+Novas empresas podem ter blocos e perguntas próprios por dados no banco (`Company`, `FormBlock`, `FormQuestion`) e seed/configuração, sem alteração de código-fonte para cadastrar perguntas.
 
-O frontend nao define perguntas por hard-code de tenant. O schema vem da API e a `ProposalForm` renderiza dinamicamente.
+O frontend não define perguntas por hard-code de tenant. O schema vem da API e a `ProposalForm` renderiza dinamicamente.
 
 Endpoint principal:
 
 `GET /api/forms/schema`
 
 Fluxo do endpoint:
-1. Valida sessao/perfil com `requireApiAccess`.
-2. Identifica o usuario autenticado.
-3. Busca a empresa vinculada ao usuario (`companyId`).
+1. Valida sessão/perfil com `requireApiAccess`.
+2. Identifica o usuário autenticado.
+3. Busca a empresa vinculada ao usuário (`companyId`).
 4. Consulta blocos e perguntas ativos da empresa.
 5. Retorna blocos/perguntas ordenados.
-6. Remove o bloco interno de pre-vendas para usuarios que nao sao `PRE_VENDAS` ou `ADMIN`.
+6. Remove o bloco interno de pré-vendas para usuários que não são `PRE_VENDAS` ou `ADMIN`.
 
 Regra de isolamento:
-1. Usuario da Attend recebe schema da Attend.
-2. Usuario da V8 recebe schema da V8.
-3. A selecao do schema e por empresa do usuario autenticado, sem `if company === "V8"` no frontend/backend para escolher perguntas.
+1. Usuário da Attend recebe schema da Attend.
+2. Usuário da V8 recebe schema da V8.
+3. A seleção do schema é por empresa do usuário autenticado, sem `if company === "V8"` no frontend/backend para escolher perguntas.
 
 Exemplo de resposta JSON:
 
@@ -169,51 +169,51 @@ Exemplo de resposta JSON:
 ---
 ## 4. AI Operational Rules (Mental Model)
 
-### Golden Rules â€” Leia antes de qualquer modificaÃ§Ã£o
+### Golden Rules – Leia antes de qualquer modificação
 
-#### ðŸ”´ ABSOLUTAS
-
-| # | Regra |
-|---|---|
-| R1 | O schema por tenant vem de `FormBlock`/`FormQuestion` via `formSchemaService.ts`; `formSchema.ts` permanece como base legada/compatibilidade. IDs de campo seguem `toFieldId(label)` salvo excecoes documentadas. |
-| R2 | **`rulesEngine.ts` Ã© puro** (sem side effects, sem I/O). Toda lÃ³gica condicional de campos obrigatÃ³rios e visibilidade de blocos vive aqui. NÃ£o replique regras em componentes. |
-| R3 | **IDs de campo sÃ£o gerados via `toFieldId(label)`** = `label.toLowerCase().replaceAll(/[^\w]+/g, "_")`. Qualquer campo cujo ID nÃ£o siga esse padrÃ£o tem motivo explÃ­cito documentado no schema. |
-| R4 | **Nunca use `NextAuth`**. AutenticaÃ§Ã£o Ã© JWT nativo via `jose`. Cookiename: `formsis_session`. |
-| R5 | **`bloco21` (PRE_SALES_INTERNAL_BLOCK_ID) nunca aparece no payload comercial**. Ã‰ adicionado explicitamente na UI/API apenas para revisores com role `PRE_VENDAS` ou `ADMIN`. |
-| R6 | **Toda API route chama `requireApiAccess(request, roles[])` antes de qualquer operaÃ§Ã£o**. Retorno `{ ok: false }` deve ter `return auth.response` imediatamente. |
-| R7 | **`ProposalRevision` Ã© imutÃ¡vel apÃ³s criaÃ§Ã£o**. Nunca atualize um snapshot; crie um novo a cada persistÃªncia relevante. |
-| R8 | **`adminPolicy.assertNotLastActiveAdmin()`** deve ser chamado antes de qualquer operaÃ§Ã£o que rebaixe role ou desative um usuÃ¡rio ADMIN. |
-| R9 | **Status da proposta segue FSM em `proposalWorkflow.ts`**. NÃ£o faÃ§a transiÃ§Ãµes diretas no DB sem chamar `canTransition(from, to, role)`. |
-| R10 | **Reabertura de proposta `FINALIZED â†’ IN_PROGRESS` Ã© exclusiva de `ADMIN`**. |
-
-#### ðŸŸ¡ ESTILO E PADRÃ•ES
+#### 🔴 ABSOLUTAS
 
 | # | Regra |
 |---|---|
-| S1 | Linguagem dos comentÃ¡rios e strings de usuÃ¡rio: **PortuguÃªs Brasileiro**. CÃ³digo (variÃ¡veis, funÃ§Ãµes, tipos): **inglÃªs ou portuguÃªs sem acentos** (padrÃ£o existente). |
+| R1 | O schema por tenant vem de `FormBlock`/`FormQuestion` via `formSchemaService.ts`; `formSchema.ts` permanece como base legada/compatibilidade. IDs de campo seguem `toFieldId(label)` salvo exceções documentadas. |
+| R2 | **`rulesEngine.ts` é puro** (sem side effects, sem I/O). Toda lógica condicional de campos obrigatórios e visibilidade de blocos vive aqui. Não replique regras em componentes. |
+| R3 | **IDs de campo são gerados via `toFieldId(label)`** = `label.toLowerCase().replaceAll(/[^\w]+/g, "_")`. Qualquer campo cujo ID não siga esse padrão tem motivo explícito documentado no schema. |
+| R4 | **Nunca use `NextAuth`**. Autenticação é JWT nativo via `jose`. Cookiename: `formsis_session`. |
+| R5 | **`bloco21` (PRE_SALES_INTERNAL_BLOCK_ID) nunca aparece no payload comercial**. É adicionado explicitamente na UI/API apenas para revisores com role `PRE_VENDAS` ou `ADMIN`. |
+| R6 | **Toda API route chama `requireApiAccess(request, roles[])` antes de qualquer operação**. Retorno `{ ok: false }` deve ter `return auth.response` imediatamente. |
+| R7 | **`ProposalRevision` é imutável após criação**. Nunca atualize um snapshot; crie um novo a cada persistência relevante. |
+| R8 | **`adminPolicy.assertNotLastActiveAdmin()`** deve ser chamado antes de qualquer operação que rebaixe role ou desative um usuário ADMIN. |
+| R9 | **Status da proposta segue FSM em `proposalWorkflow.ts`**. Não faça transições diretas no DB sem chamar `canTransition(from, to, role)`. |
+| R10 | **Reabertura de proposta `FINALIZED → IN_PROGRESS` é exclusiva de `ADMIN`**. |
+
+#### 🟡 ESTILO E PADRÕES
+
+| # | Regra |
+|---|---|
+| S1 | Linguagem dos comentários e strings de usuário: **Português Brasileiro**. Código (variáveis, funções, tipos): **inglês ou português sem acentos** (padrão existente). |
 | S2 | Tratamento de erro em API routes: retorne `NextResponse.json({ error: "mensagem" }, { status: NNN })`. Nunca exponha stack traces. |
-| S3 | **Pino** Ã© o logger padrÃ£o (`src/lib/logger.ts`). Use `logger.info/warn/error`. Nunca use `console.log` em cÃ³digo de produÃ§Ã£o. |
-| S4 | Classes CSS reutilizÃ¡veis: centralize em `uiClasses.ts`. Evite strings de Tailwind inline em componentes novos. |
-| S5 | Campos `payloadJson` e `warningsJson` no DB sÃ£o **strings JSON serializadas**, nÃ£o objetos. Use `JSON.stringify/parse` explicitamente. |
-| S6 | **Rate limiting** (`rateLimit.ts`) deve ser aplicado em endpoints de autenticaÃ§Ã£o. |
-| S7 | Preferir **Server Components** por padrÃ£o. Adicionar `"use client"` somente onde houver estado interativo ou hooks de browser. |
-| S8 | `db.ts` exporta um **singleton** do Prisma Client. Nunca instancie `new PrismaClient()` diretamente em outros mÃ³dulos. |
+| S3 | **Pino** é o logger padrão (`src/lib/logger.ts`). Use `logger.info/warn/error`. Nunca use `console.log` em código de produção. |
+| S4 | Classes CSS reutilizáveis: centralize em `uiClasses.ts`. Evite strings de Tailwind inline em componentes novos. |
+| S5 | Campos `payloadJson` e `warningsJson` no DB são **strings JSON serializadas**, não objetos. Use `JSON.stringify/parse` explicitamente. |
+| S6 | **Rate limiting** (`rateLimit.ts`) deve ser aplicado em endpoints de autenticação. |
+| S7 | Preferir **Server Components** por padrão. Adicionar `"use client"` somente onde houver estado interativo ou hooks de browser. |
+| S8 | `db.ts` exporta um **singleton** do Prisma Client. Nunca instancie `new PrismaClient()` diretamente em outros módulos. |
 
-#### ðŸŸ¢ ARQUITETURA
+#### 🟢 ARQUITETURA
 
 | # | Regra |
 |---|---|
 | A1 | Novos blocos/perguntas por empresa devem ser cadastrados no banco (`FormBlock`/`FormQuestion`) e entregues por `GET /api/forms/schema`. Evite hard-code por tenant no frontend/backend. |
-| A2 | Blocos condicionalmente visÃ­veis (`bloco12`, `bloco17`, `bloco19`) sÃ£o controlados **somente** pelo `rulesEngine`. Nunca hard-code visibilidade em componente. |
-| A3 | `@prisma/client` Ã© `serverExternalPackage` (veja `next.config.ts`). NÃ£o importe Prisma em Client Components. |
-| A4 | O middleware (`proxy.ts`) faz **apenas** verificaÃ§Ã£o de presenÃ§a do cookie. VerificaÃ§Ã£o de role e validade do JWT ocorre nas API routes via `requireApiAccess`. |
-| A5 | `AuditLog` deve ser criado para toda mutaÃ§Ã£o de `FormSession`, `Submission` e `User`. |
+| A2 | Blocos condicionalmente visíveis (`bloco12`, `bloco17`, `bloco19`) são controlados **somente** pelo `rulesEngine`. Nunca hard-code visibilidade em componente. |
+| A3 | `@prisma/client` é `serverExternalPackage` (veja `next.config.ts`). Não importe Prisma em Client Components. |
+| A4 | O middleware (`proxy.ts`) faz **apenas** verificação de presença do cookie. Verificação de role e validade do JWT ocorre nas API routes via `requireApiAccess`. |
+| A5 | `AuditLog` deve ser criado para toda mutação de `FormSession`, `Submission` e `User`. |
 
 ---
 
 ## 5. Core Logic Maps
 
-### `formSchema.ts` â€” Mapa de Blocos
+### `formSchema.ts` – Mapa de Blocos
 
 > Nota: este mapa representa o schema base legado (especialmente para compatibilidade da Attend). Em modo multi-tenant, blocos/perguntas podem variar por empresa via `FormBlock`/`FormQuestion`.
 
@@ -221,57 +221,57 @@ Exemplo de resposta JSON:
 |---|---|---|---|
 | bloco1 | Contexto da demanda | Sempre | 11 |
 | bloco2 | Dados do cliente | Sempre | 18 |
-| bloco3 | LocalizaÃ§Ã£o/Site | Sempre | 18 |
-| bloco4 | Objetivo da soluÃ§Ã£o | Sempre | 18 |
-| bloco5 | AplicaÃ§Ãµes e trÃ¡fego | Sempre | 28 |
-| bloco6 | UsuÃ¡rios e dispositivos | Sempre | 16 |
+| bloco3 | Localização/Site | Sempre | 18 |
+| bloco4 | Objetivo da solução | Sempre | 18 |
+| bloco5 | Aplicações e tráfego | Sempre | 28 |
+| bloco6 | Usuários e dispositivos | Sempre | 16 |
 | bloco7 | Conectividade atual | Sempre | 16 |
 | bloco8 | Rede local/topologia | Sempre | 31 |
 | bloco9 | Wi-Fi | Sempre | 16 |
-| bloco10 | SeguranÃ§a/Firewall | Sempre | 18 |
+| bloco10 | Segurança/Firewall | Sempre | 18 |
 | bloco11 | VPN | Sempre | 18 |
 | bloco12 | Failover/SD-WAN | **Condicional** | 14 |
-| bloco13 | Infra fÃ­sica Starlink | Sempre | 22 |
-| bloco14 | Energia/proteÃ§Ã£o | Sempre | 15 |
+| bloco13 | Infra física Starlink | Sempre | 22 |
+| bloco14 | Energia/proteção | Sempre | 15 |
 | bloco15 | Monitoramento | Sempre | 16 |
 | bloco16 | SLA/Suporte | Sempre | 12 |
-| bloco17 | LogÃ­stica/mobilizaÃ§Ã£o | **Condicional** | 16 |
+| bloco17 | Logística/mobilização | **Condicional** | 16 |
 | bloco18 | Modelo comercial | Sempre | 15 |
 | bloco19 | Multi-site | **Condicional** | 12 |
-| bloco20 | Visita tÃ©cnica | Sempre | 8 |
-| bloco21 | **INTERNO PrÃ©-vendas** | Restrito (role) | 16 |
+| bloco20 | Visita técnica | Sempre | 8 |
+| bloco21 | **INTERNO Pré-vendas** | Restrito (role) | 16 |
 
-### `rulesEngine.ts` â€” Gatilhos CrÃ­ticos
+### `rulesEngine.ts` – Gatilhos Críticos
 
-| CondiÃ§Ã£o de entrada | Efeito |
+| Condição de entrada | Efeito |
 |---|---|
-| `escopo_unidades > 1` | Ativa `bloco19`; `ms_qtd_total_sites` obrigatÃ³rio |
-| `ambiente âˆˆ {remoto, area de dificil acesso}` | Ativa `bloco17`; warning logÃ­stico |
-| `local_remoto = sim` | Ativa `bloco17`; 14 campos logÃ­sticos obrigatÃ³rios |
-| `deseja_solucao_hibrida = sim` | Ativa `bloco12`; 13 campos de integraÃ§Ã£o obrigatÃ³rios |
+| `escopo_unidades > 1` | Ativa `bloco19`; `ms_qtd_total_sites` obrigatório |
+| `ambiente ∈ {remoto, area de dificil acesso}` | Ativa `bloco17`; warning logístico |
+| `local_remoto = sim` | Ativa `bloco17`; 14 campos logísticos obrigatórios |
+| `deseja_solucao_hibrida = sim` | Ativa `bloco12`; 13 campos de integração obrigatórios |
 | `failover/balanceamento/sdwan_atual = sim` | Ativa `bloco12` |
-| `cliente_usa_vpn = sim` | 18 campos VPN tornam-se obrigatÃ³rios |
-| `link_contingencia_critica = sim` | 4 campos energia/SLA obrigatÃ³rios; warnings crÃ­ticos |
-| `VoIP = sim` | `ha_necessidade_de_qos` obrigatÃ³rio e deve ser `sim` |
-| `modelo_oferta âˆˆ {locacao, servico gerenciado}` | `ha_mensalidade_recorrente = sim` obrigatÃ³rio |
-| `urgencia âˆˆ {urgente, emergencial}` | `justificativa_urgencia` obrigatÃ³rio |
-| `data_desejada_implantacao â‰¤ 15 dias` + alta complexidade | Warning de risco logÃ­stico |
-| `horario_suporte_desejado = 24x7` | Warning: aprovaÃ§Ã£o por alÃ§ada obrigatÃ³ria |
+| `cliente_usa_vpn = sim` | 18 campos VPN tornam-se obrigatórios |
+| `link_contingencia_critica = sim` | 4 campos energia/SLA obrigatórios; warnings críticos |
+| `VoIP = sim` | `ha_necessidade_de_qos` obrigatório e deve ser `sim` |
+| `modelo_oferta ∈ {locacao, servico gerenciado}` | `ha_mensalidade_recorrente = sim` obrigatório |
+| `urgencia ∈ {urgente, emergencial}` | `justificativa_urgencia` obrigatório |
+| `data_desejada_implantacao ≤ 15 dias` + alta complexidade | Warning de risco logístico |
+| `horario_suporte_desejado = 24x7` | Warning: aprovação por alçada obrigatória |
 
-### `proposalWorkflow.ts` â€” FSM de Status
+### `proposalWorkflow.ts` – FSM de Status
 
 ```
-DRAFT â”€â”€â”€â”€â”€â”€â†’ IN_PROGRESS â†’ PAUSED â”€â”€â”
-  â”‚                â”‚                  â”‚
-  â””â”€â”€â”€â”€â”€â”€â†’ FINALIZED â†â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-               â”‚ (ADMIN only: â†’ IN_PROGRESS)
-               â†“
+DRAFT ──────→ IN_PROGRESS → PAUSED ──┐
+  │                │                  │
+  └──────→ FINALIZED ←────────────────┘
+               │ (ADMIN only: → IN_PROGRESS)
+               ↓
            ARCHIVED (terminal)
 ```
 
-### `auth.ts` â€” FunÃ§Ãµes Exportadas
+### `auth.ts` – Funções Exportadas
 
-| FunÃ§Ã£o | Contexto de uso |
+| Função | Contexto de uso |
 |---|---|
 | `signSession(payload)` | API route de login |
 | `buildSessionCookie(token)` | Header `Set-Cookie` no login |
@@ -324,32 +324,32 @@ AuditLog { id, action, resourceType, resourceId, detailsJson,
 ## 7. Setup & Execution
 
 ```bash
-# 1. Copiar variÃ¡veis de ambiente
+# 1. Copiar variáveis de ambiente
 cp .env.example .env
 
-# 2. Instalar dependÃªncias
+# 2. Instalar dependências
 npm install
 
-# 3. Aplicar migraÃ§Ãµes e popular DB
+# 3. Aplicar migrações e popular DB
 npx prisma migrate deploy
 npm run db:seed
 
 # 4. Rodar em desenvolvimento (porta 3001)
 npm run dev
 
-# 5. Testes unitÃ¡rios
+# 5. Testes unitários
 npm test
 
 # 6. Prisma Studio (opcional)
 npx prisma studio
 ```
 
-### VariÃ¡veis de Ambiente ObrigatÃ³rias
+### Variáveis de Ambiente Obrigatórias
 
-| VariÃ¡vel | DescriÃ§Ã£o |
+| Variável | Descrição |
 |---|---|
 | `DATABASE_URL` | `file:./dev.db` (SQLite) |
-| `AUTH_SECRET` | Segredo HMAC do JWT (mÃ­n. 32 chars) |
+| `AUTH_SECRET` | Segredo HMAC do JWT (mín. 32 chars) |
 | `AUTH_SECURE_COOKIES` | `0` (dev) / `1` (HTTPS prod) |
 | `FORMSIS_ADMIN_EMAIL` | Email do admin semeado |
 | `FORMSIS_ADMIN_PASSWORD` | Senha do admin semeado |
@@ -361,13 +361,9 @@ npx prisma studio
 
 | Item | Detalhe |
 |---|---|
-| SQLite em produÃ§Ã£o | Banco de arquivo Ãºnico; nÃ£o suporta mÃºltiplos escritores concorrentes. Migrar para PostgreSQL antes de mÃºltiplos usuÃ¡rios simultÃ¢neos em prod. |
-| `@prisma/client` no Edge | NÃ£o funciona em Edge Runtime. Todas as rotas que usam Prisma devem ser `nodejs` runtime. |
-| `bloco21` visibilidade | O middleware **nÃ£o** bloqueia rotas de UI para roles. O controle de exibiÃ§Ã£o do bloco 21 Ã© feito na UI (`PRE_SALES_INTERNAL_BLOCK_ID`) e na API. NÃ£o confiar apenas no middleware para RBAC. |
-| `payloadJson` tamanho | FormulÃ¡rio completo tem ~500 campos. `payloadJson` pode ultrapassar 50 KB. Validar limites se migrar para Postgres. |
-| Rate limiter | ImplementaÃ§Ã£o in-memory (`rateLimit.ts`). NÃ£o persiste entre reinicializaÃ§Ãµes e nÃ£o funciona em ambiente multi-instÃ¢ncia. |
-| GeraÃ§Ã£o de documentos | `docx` e `pdf-lib` sÃ£o operaÃ§Ãµes sÃ­ncronas e pesadas. NÃ£o executar dentro de Server Actions sem anÃ¡lise de timeout. |
-
-
-
-
+| SQLite em produção | Banco de arquivo único; não suporta múltiplos escritores concorrentes. Migrar para PostgreSQL antes de múltiplos usuários simultâneos em prod. |
+| `@prisma/client` no Edge | Não funciona em Edge Runtime. Todas as rotas que usam Prisma devem ser `nodejs` runtime. |
+| `bloco21` visibilidade | O middleware **não** bloqueia rotas de UI para roles. O controle de exibição do bloco 21 é feito na UI (`PRE_SALES_INTERNAL_BLOCK_ID`) e na API. Não confiar apenas no middleware para RBAC. |
+| `payloadJson` tamanho | Formulário completo tem ~500 campos. `payloadJson` pode ultrapassar 50 KB. Validar limites se migrar para Postgres. |
+| Rate limiter | Implementação in-memory (`rateLimit.ts`). Não persiste entre reinicializações e não funciona em ambiente multi-instância. |
+| Geração de documentos | `docx` e `pdf-lib` são operações síncronas e pesadas. Não executar dentro de Server Actions sem análise de timeout. |
