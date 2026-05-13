@@ -389,18 +389,10 @@ async function main() {
 
   await upsertUser(
     process.env.FORMSIS_ADMIN_EMAIL ?? "admin@formsis.local",
-    "Administrador",
-    UserRole.ADMIN,
+    "Super Administrador",
+    UserRole.SUPER_ADMIN,
     process.env.FORMSIS_ADMIN_PASSWORD ?? "Admin@123",
-    attend.id,
-  );
-
-  await upsertUser(
-    process.env.FORMSIS_USER_EMAIL ?? "usuario@formsis.local",
-    "Usuario",
-    UserRole.COMERCIAL,
-    process.env.FORMSIS_USER_PASSWORD ?? "Usuario@123",
-    attend.id,
+    null,
   );
 
   await seedCompanySchema(attend.id, attendSchema);
@@ -423,4 +415,3 @@ main()
     await prisma.$disconnect();
     process.exit(1);
   });
-
