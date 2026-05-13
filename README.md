@@ -46,8 +46,10 @@ FormiSis/
 |   |   |   |-- forms/               # GET/POST /forms, /forms/[id], GET /forms/schema
 |   |   |   |-- document/            # POST gera DOCX/PDF
 |   |   |   |-- submissions/         # GET /submissions
-|   |   |   `-- admin/               # CRUD usuarios/empresas (SUPER_ADMIN/ADMIN)
+|   |   |   `-- admin/               # CRUD usuarios, empresas e Form Builder
 |   |   |-- admin/
+|   |   |   |-- questionarios/       # UI do Form Builder
+|   |   |   `-- usuarios/
 |   |   |-- dashboard/
 |   |   |-- login/
 |   |   |-- pre-vendas/
@@ -191,6 +193,37 @@ Exemplo de resposta JSON:
   ]
 }
 ```
+
+### Form Builder Administrativo
+
+1. **Objetivo da feature**: Permitir que `ADMIN` e `SUPER_ADMIN` gerenciem blocos e perguntas via interface no próprio sistema.
+2. **Rotas visuais**:
+   - `/admin/questionarios`: Gestão e ordenação de blocos.
+   - `/admin/questionarios/blocos/[blockId]/perguntas`: Gestão e ordenação de perguntas de um bloco específico.
+3. **Regras por perfil**:
+   - `SUPER_ADMIN`: Pode selecionar a empresa e gerenciar blocos/perguntas de qualquer tenant.
+   - `ADMIN`: Gerencia apenas blocos/perguntas da própria empresa.
+   - `COMERCIAL`, `PRE_VENDAS` e `LEITURA`: Não acessam a área.
+4. **Funcionalidades da tela**:
+   - Listar, criar, editar, ativar/desativar e ordenar blocos.
+   - Listar, criar, editar, ativar/desativar e ordenar perguntas.
+   - Configurar tipo, obrigatoriedade, placeholder, texto de ajuda e opções para perguntas.
+5. **Tipos de pergunta suportados**:
+   - `text`, `textarea`, `number`, `select`, `radio`, `checkbox`, `date`, `boolean`.
+6. **Endpoints administrativos usados**:
+   - `GET /api/admin/form-blocks`
+   - `POST /api/admin/form-blocks`
+   - `PATCH /api/admin/form-blocks/[id]`
+   - `GET /api/admin/form-blocks/[id]/questions`
+   - `POST /api/admin/form-blocks/[id]/questions`
+   - `PATCH /api/admin/form-questions/[id]`
+7. **Regras importantes**:
+   - Não há delete físico de blocos/perguntas. A desativação usa `active = false`.
+   - `fieldId` é gerado automaticamente com `toFieldId(label)` ao criar a pergunta.
+   - Ao editar o label de uma pergunta existente, o `fieldId` não deve ser alterado automaticamente para evitar quebra de histórico.
+   - `optionsJson` e `validationJson` continuam como JSON serializado no banco.
+   - Somente blocos/perguntas ativos (`active = true`) aparecem em `GET /api/forms/schema`.
+   - Toda mutação relevante (criação, edição, desativação) gera `AuditLog`.
 
 ---
 ## 4. AI Operational Rules (Mental Model)
@@ -394,6 +427,7 @@ npx prisma studio
 | `@prisma/client` no Edge | Não funciona em Edge Runtime. Todas as rotas que usam Prisma devem ser `nodejs` runtime. |
 | `bloco21` visibilidade | O middleware **não** bloqueia rotas de UI para roles. O controle de exibição do bloco 21 é feito na UI (`PRE_SALES_INTERNAL_BLOCK_ID`) e na API. Não confiar apenas no middleware para RBAC. |
 | Bootstrap administrativo | A seed inicial cria apenas um `SUPER_ADMIN` sem empresa. O primeiro `ADMIN` de cada empresa deve ser criado pelo `SUPER_ADMIN`. |
+| Form Builder | A exclusão física de blocos e perguntas não é permitida para não quebrar o histórico de propostas antigas (snapshot). Use a desativação (`active = false`). O isolamento de tenant é garantido na UI e API. |
 | `payloadJson` tamanho | Formulário completo tem ~500 campos. `payloadJson` pode ultrapassar 50 KB. Validar limites se migrar para Postgres. |
 | Rate limiter | Implementação in-memory (`rateLimit.ts`). Não persiste entre reinicializações e não funciona em ambiente multi-instância. |
 | Geração de documentos | `docx` e `pdf-lib` são operações síncronas e pesadas. Não executar dentro de Server Actions sem análise de timeout. |
