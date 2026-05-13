@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -32,6 +32,7 @@ type UserRow = {
 };
 
 const roles = [
+  { value: "SUPER_ADMIN", label: "Super Administrador" },
   { value: "ADMIN", label: "Administrador" },
   { value: "COMERCIAL", label: "Comercial" },
   { value: "PRE_VENDAS", label: "Pre-vendas" },
