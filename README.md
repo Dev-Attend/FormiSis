@@ -7,7 +7,7 @@
 | **Nome** | FormiSis |
 | **Propósito** | Sistema interno de levantamento técnico-comercial para propostas de conectividade (Starlink/rádio/fibra), cobrindo qualificação de demanda → geração de documento final. |
 | **Problema resolvido** | Elimina formulários manuais dispersos substituindo por um fluxo digital estruturado com validação de regras de negócio em tempo real, auditoria completa e geração de documentos técnicos. |
-| **Público** | Usuários internos da Attend: Comercial, Pré-vendas, Leitura, Admin. |
+| **Público** | Usuários internos da Attend: Comercial, Pré-vendas, Leitura, Admin e Super Admin. |
 
 ---
 
@@ -46,7 +46,7 @@ FormiSis/
 |   |   |   |-- forms/               # GET/POST /forms, /forms/[id], GET /forms/schema
 |   |   |   |-- document/            # POST gera DOCX/PDF
 |   |   |   |-- submissions/         # GET /submissions
-|   |   |   `-- admin/               # CRUD usuarios (ADMIN)
+|   |   |   `-- admin/               # CRUD usuarios/empresas (SUPER_ADMIN/ADMIN)
 |   |   |-- admin/
 |   |   |-- dashboard/
 |   |   |-- login/
@@ -106,6 +106,32 @@ requireApiAccess(request, allowedRoles[])
   -> valida JWT, usuario ativo e role permitida
 ```
 
+### Hierarquia Administrativa / Empresas
+
+```
+SUPER_ADMIN
+  -> administra a plataforma inteira
+  -> pode ter companyId null
+  -> cria/lista/edita/desativa empresas
+  -> cria usuarios para qualquer empresa, incluindo o primeiro ADMIN de cada tenant
+  -> lista usuarios de todas as empresas e pode filtrar por companyId
+
+ADMIN
+  -> administra apenas a propria empresa
+  -> deve ter companyId obrigatoriamente
+  -> usuarios criados por ADMIN herdam auth.user.companyId
+  -> nao cria empresas e nao pode vincular usuarios a outra empresa
+
+COMERCIAL / PRE_VENDAS / LEITURA
+  -> seguem o fluxo operacional existente, sempre vinculados a uma empresa
+```
+
+Endpoints administrativos:
+1. `GET/POST /api/admin/companies` - apenas `SUPER_ADMIN`.
+2. `PATCH /api/admin/companies/[id]` - apenas `SUPER_ADMIN`.
+3. `GET/POST /api/admin/users` - `SUPER_ADMIN` global; `ADMIN` restrito a propria empresa.
+4. `PATCH /api/admin/users/[id]` - `SUPER_ADMIN` global; `ADMIN` restrito a usuarios da propria empresa.
+
 ### Questionários Dinâmicos por Empresa / Multi-tenancy
 
 O FormiSis suporta múltiplas empresas (tenants). Cada usuário pertence a uma empresa via `User.companyId`, e o formulário carregado depende da empresa do usuário autenticado.
@@ -126,7 +152,7 @@ Fluxo do endpoint:
 3. Busca a empresa vinculada ao usuário (`companyId`).
 4. Consulta blocos e perguntas ativos da empresa.
 5. Retorna blocos/perguntas ordenados.
-6. Remove o bloco interno de pré-vendas para usuários que não são `PRE_VENDAS` ou `ADMIN`.
+6. Remove o bloco interno de pré-vendas para usuários que não são `PRE_VENDAS`, `ADMIN` ou `SUPER_ADMIN`.
 
 Regra de isolamento:
 1. Usuário da Attend recebe schema da Attend.
@@ -179,12 +205,14 @@ Exemplo de resposta JSON:
 | R2 | **`rulesEngine.ts` é puro** (sem side effects, sem I/O). Toda lógica condicional de campos obrigatórios e visibilidade de blocos vive aqui. Não replique regras em componentes. |
 | R3 | **IDs de campo são gerados via `toFieldId(label)`** = `label.toLowerCase().replaceAll(/[^\w]+/g, "_")`. Qualquer campo cujo ID não siga esse padrão tem motivo explícito documentado no schema. |
 | R4 | **Nunca use `NextAuth`**. Autenticação é JWT nativo via `jose`. Cookiename: `formsis_session`. |
-| R5 | **`bloco21` (PRE_SALES_INTERNAL_BLOCK_ID) nunca aparece no payload comercial**. É adicionado explicitamente na UI/API apenas para revisores com role `PRE_VENDAS` ou `ADMIN`. |
+| R5 | **`bloco21` (PRE_SALES_INTERNAL_BLOCK_ID) nunca aparece no payload comercial**. É adicionado explicitamente na UI/API apenas para revisores com role `PRE_VENDAS`, `ADMIN` ou `SUPER_ADMIN`. |
 | R6 | **Toda API route chama `requireApiAccess(request, roles[])` antes de qualquer operação**. Retorno `{ ok: false }` deve ter `return auth.response` imediatamente. |
 | R7 | **`ProposalRevision` é imutável após criação**. Nunca atualize um snapshot; crie um novo a cada persistência relevante. |
 | R8 | **`adminPolicy.assertNotLastActiveAdmin()`** deve ser chamado antes de qualquer operação que rebaixe role ou desative um usuário ADMIN. |
 | R9 | **Status da proposta segue FSM em `proposalWorkflow.ts`**. Não faça transições diretas no DB sem chamar `canTransition(from, to, role)`. |
 | R10 | **Reabertura de proposta `FINALIZED → IN_PROGRESS` é exclusiva de `ADMIN`**. |
+| R11 | **`SUPER_ADMIN` é o único perfil que pode ficar sem `companyId`**. `ADMIN`, `COMERCIAL`, `PRE_VENDAS` e `LEITURA` devem sempre estar vinculados a uma empresa ativa. |
+| R12 | **APIs de empresas são exclusivas de `SUPER_ADMIN`**. Gestão de usuários aceita `SUPER_ADMIN` ou `ADMIN`, sempre respeitando escopo por empresa. |
 
 #### 🟡 ESTILO E PADRÕES
 
@@ -207,7 +235,7 @@ Exemplo de resposta JSON:
 | A2 | Blocos condicionalmente visíveis (`bloco12`, `bloco17`, `bloco19`) são controlados **somente** pelo `rulesEngine`. Nunca hard-code visibilidade em componente. |
 | A3 | `@prisma/client` é `serverExternalPackage` (veja `next.config.ts`). Não importe Prisma em Client Components. |
 | A4 | O middleware (`proxy.ts`) faz **apenas** verificação de presença do cookie. Verificação de role e validade do JWT ocorre nas API routes via `requireApiAccess`. |
-| A5 | `AuditLog` deve ser criado para toda mutação de `FormSession`, `Submission` e `User`. |
+| A5 | `AuditLog` deve ser criado para toda mutação de `FormSession`, `Submission`, `Company` e `User`. |
 
 ---
 
@@ -276,7 +304,7 @@ DRAFT ──────→ IN_PROGRESS → PAUSED ──┐
 | `signSession(payload)` | API route de login |
 | `buildSessionCookie(token)` | Header `Set-Cookie` no login |
 | `clearSessionCookie()` | Header `Set-Cookie` no logout |
-| `requireApiAccess(req, roles[])` | **Toda** API route protegida |
+| `requireApiAccess(req, roles[])` | **Toda** API route protegida; `SUPER_ADMIN` herda acesso quando `ADMIN` é permitido |
 | `getServerSessionUser()` | Server Components e layouts |
 
 ---
@@ -290,8 +318,9 @@ Company { id, name, slug, active, createdAt, updatedAt }
   -> 1:N com FormBlock
 
 User { id, name, email, passwordHash, role: UserRole, companyId?, active, createdAt, updatedAt }
-  -> UserRole: ADMIN | COMERCIAL | PRE_VENDAS | LEITURA
+  -> UserRole: SUPER_ADMIN | ADMIN | COMERCIAL | PRE_VENDAS | LEITURA
   -> companyId referencia Company (isolamento por tenant)
+  -> companyId null permitido apenas para SUPER_ADMIN
 
 FormBlock { id, companyId, blockKey, title, description?, order, active, createdAt, updatedAt }
   -> unico por tenant em (companyId, blockKey)
@@ -351,8 +380,8 @@ npx prisma studio
 | `DATABASE_URL` | `file:./dev.db` (SQLite) |
 | `AUTH_SECRET` | Segredo HMAC do JWT (mín. 32 chars) |
 | `AUTH_SECURE_COOKIES` | `0` (dev) / `1` (HTTPS prod) |
-| `FORMSIS_ADMIN_EMAIL` | Email do admin semeado |
-| `FORMSIS_ADMIN_PASSWORD` | Senha do admin semeado |
+| `FORMSIS_ADMIN_EMAIL` | Email do SUPER_ADMIN semeado |
+| `FORMSIS_ADMIN_PASSWORD` | Senha do SUPER_ADMIN semeado |
 | `LOG_LEVEL` | `info` \| `debug` \| `warn` \| `error` |
 
 ---
@@ -364,6 +393,7 @@ npx prisma studio
 | SQLite em produção | Banco de arquivo único; não suporta múltiplos escritores concorrentes. Migrar para PostgreSQL antes de múltiplos usuários simultâneos em prod. |
 | `@prisma/client` no Edge | Não funciona em Edge Runtime. Todas as rotas que usam Prisma devem ser `nodejs` runtime. |
 | `bloco21` visibilidade | O middleware **não** bloqueia rotas de UI para roles. O controle de exibição do bloco 21 é feito na UI (`PRE_SALES_INTERNAL_BLOCK_ID`) e na API. Não confiar apenas no middleware para RBAC. |
+| Bootstrap administrativo | A seed inicial cria apenas um `SUPER_ADMIN` sem empresa. O primeiro `ADMIN` de cada empresa deve ser criado pelo `SUPER_ADMIN`. |
 | `payloadJson` tamanho | Formulário completo tem ~500 campos. `payloadJson` pode ultrapassar 50 KB. Validar limites se migrar para Postgres. |
 | Rate limiter | Implementação in-memory (`rateLimit.ts`). Não persiste entre reinicializações e não funciona em ambiente multi-instância. |
 | Geração de documentos | `docx` e `pdf-lib` são operações síncronas e pesadas. Não executar dentro de Server Actions sem análise de timeout. |
