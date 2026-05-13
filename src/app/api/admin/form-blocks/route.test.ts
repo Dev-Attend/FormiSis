@@ -96,6 +96,29 @@ describe("Admin form blocks route", () => {
     expect(dbMock.formBlock.findMany).not.toHaveBeenCalled();
   });
 
+  it("ADMIN lista somente blocos da propria empresa", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "a1",
+        email: "admin@attend.local",
+        role: "ADMIN",
+        name: "Admin",
+        companyId: "c_attend",
+        company: { id: "c_attend", name: "Attend", slug: "attend" },
+      },
+    });
+    dbMock.formBlock.findMany.mockResolvedValue([]);
+
+    const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks"));
+    expect(response.status).toBe(200);
+
+    const query = dbMock.formBlock.findMany.mock.calls[0][0] as {
+      where?: { companyId?: string };
+    };
+    expect(query.where?.companyId).toBe("c_attend");
+  });
+
   it("SUPER_ADMIN cria bloco para empresa selecionada", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,

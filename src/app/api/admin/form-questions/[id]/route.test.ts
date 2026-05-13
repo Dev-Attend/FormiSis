@@ -224,6 +224,55 @@ describe("Admin form questions [id] route", () => {
     expect(body.question.active).toBe(false);
   });
 
+  it("SUPER_ADMIN edita pergunta de qualquer empresa", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "su1",
+        email: "super@formsis.local",
+        role: "SUPER_ADMIN",
+        name: "Super",
+        companyId: null,
+        company: null,
+      },
+    });
+    dbMock.formQuestion.findUnique.mockResolvedValue({
+      id: "q_v8",
+      blockId: "b_v8",
+      fieldId: "nome_cliente",
+      label: "Nome",
+      type: "text",
+      optionsJson: null,
+      block: { id: "b_v8", companyId: "c_v8" },
+    });
+    dbMock.formQuestion.update.mockResolvedValue({
+      id: "q_v8",
+      blockId: "b_v8",
+      fieldId: "nome_cliente",
+      label: "Nome completo",
+      type: "text",
+      placeholder: null,
+      helpText: null,
+      requiredDefault: false,
+      optionsJson: null,
+      validationJson: null,
+      order: 1,
+      active: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    dbMock.auditLog.create.mockResolvedValue({ id: "audit_q_4" });
+
+    const request = new NextRequest("http://localhost:3001/api/admin/form-questions/q_v8", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Nome completo" }),
+    });
+
+    const response = await PATCH(request, { params: Promise.resolve({ id: "q_v8" }) });
+    expect(response.status).toBe(200);
+  });
+
   it("rejeita requisicao nao autenticada", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: false,

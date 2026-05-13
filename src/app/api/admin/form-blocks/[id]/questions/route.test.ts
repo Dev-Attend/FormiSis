@@ -136,6 +136,39 @@ describe("Admin form block questions route", () => {
     expect(body.questions[0].options[0].value).toBe("fibra");
   });
 
+  it("ADMIN lista perguntas do proprio bloco", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "a1",
+        email: "admin@attend.local",
+        role: "ADMIN",
+        name: "Admin",
+        companyId: "c_attend",
+        company: { id: "c_attend", name: "Attend", slug: "attend" },
+      },
+    });
+    dbMock.formBlock.findUnique.mockResolvedValue({
+      id: "b_attend",
+      companyId: "c_attend",
+      blockKey: "bloco1",
+      title: "Bloco Attend",
+      description: null,
+      order: 1,
+      active: true,
+      company: { id: "c_attend", name: "Attend", slug: "attend" },
+    });
+    dbMock.formQuestion.findMany.mockResolvedValue([]);
+
+    const response = await GET(
+      new NextRequest("http://localhost:3001/api/admin/form-blocks/b_attend/questions"),
+      { params: Promise.resolve({ id: "b_attend" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(dbMock.formQuestion.findMany).toHaveBeenCalledTimes(1);
+  });
+
   it("cria pergunta com fieldId derivado de toFieldId(label)", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
