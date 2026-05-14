@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { buildSessionCookie, signSession } from "@/lib/auth";
+import {
+  buildSessionCookie,
+  getSelectableCompaniesForUser,
+  signSession,
+} from "@/lib/auth";
 import { enforceRateLimit, getRequestClientKey } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
@@ -22,18 +26,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "E-mail e senha são obrigatórios." }, { status: 400 });
   }
 
-  const user = await db.user.findUnique({
-    where: { email },
-    include: { company: { select: { id: true, name: true, slug: true, active: true } } },
-  });
+  const user = await db.user.findUnique({ where: { email } });
   if (!user || !user.active) {
     return NextResponse.json({ error: "Credenciais invalidas." }, { status: 401 });
-  }
-  if (user.role !== "SUPER_ADMIN" && !user.companyId) {
-    return NextResponse.json({ error: "Usuario sem empresa vinculada." }, { status: 403 });
-  }
-  if (user.companyId && (!user.company || !user.company.active)) {
-    return NextResponse.json({ error: "Empresa inativa para este usuario." }, { status: 403 });
   }
 
   const match = await bcrypt.compare(password, user.passwordHash);
@@ -41,24 +36,42 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Credenciais invalidas." }, { status: 401 });
   }
 
+  const selectableCompanies = await getSelectableCompaniesForUser(user.id, user.role);
+
+  if (user.role !== "SUPER_ADMIN" && selectableCompanies.length === 0) {
+    return NextResponse.json(
+      { error: "Usuario sem empresa vinculada. Contate o administrador." },
+      { status: 403 },
+    );
+  }
+
+  const activeCompanyId =
+    selectableCompanies.length === 1 ? selectableCompanies[0].id : null;
+  const requiresCompanySelection =
+    selectableCompanies.length > 1 || (user.role === "SUPER_ADMIN" && selectableCompanies.length > 1);
+
   const token = await signSession({
     sub: user.id,
     email: user.email,
     role: user.role,
     name: user.name,
+    activeCompanyId,
   });
+
+  const activeCompany = activeCompanyId
+    ? selectableCompanies.find((c) => c.id === activeCompanyId) ?? null
+    : null;
 
   return new NextResponse(
     JSON.stringify({
       ok: true,
+      requiresCompanySelection,
       user: {
         name: user.name,
         email: user.email,
         role: user.role,
-        companyId: user.companyId,
-        company: user.company
-          ? { id: user.company.id, name: user.company.name, slug: user.company.slug }
-          : null,
+        activeCompanyId,
+        activeCompany,
       },
     }),
     {

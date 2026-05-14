@@ -33,7 +33,11 @@ export default function LoginPage() {
       setError(payload.error ?? "Falha no login.");
       return;
     }
-    router.push(redirectTo);
+    const payload = (await res.json().catch(() => ({}))) as {
+      requiresCompanySelection?: boolean;
+    };
+    const destination = payload.requiresCompanySelection ? "/select-company" : redirectTo;
+    router.push(destination);
     router.refresh();
   };
 
