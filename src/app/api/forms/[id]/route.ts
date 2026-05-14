@@ -104,11 +104,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Sem permissao para alterar esta proposta." }, { status: 403 });
   }
 
-  const owner = await db.user.findUnique({
-    where: { id: session.createdById },
-    select: { companyId: true },
-  });
-  const schemaCompanyId = owner?.companyId ?? auth.user.companyId;
+  const schemaCompanyId = auth.user.activeCompanyId;
   let schemaBlocks = blocos;
   if (schemaCompanyId) {
     const tenantSchema = await loadTenantFormSchemaByCompanyId(schemaCompanyId);

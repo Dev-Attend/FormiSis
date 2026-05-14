@@ -31,10 +31,13 @@ export async function PATCH(
 
   const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
   if (!isSuperAdmin) {
-    if (!auth.user.companyId) {
-      return NextResponse.json({ error: "Administrador sem empresa vinculada." }, { status: 403 });
+    if (!auth.user.activeCompanyId) {
+      return NextResponse.json(
+        { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+        { status: 409 },
+      );
     }
-    if (existingBlock.companyId !== auth.user.companyId) {
+    if (existingBlock.companyId !== auth.user.activeCompanyId) {
       return NextResponse.json(
         { error: "Sem permissao para editar bloco de outra empresa." },
         { status: 403 },

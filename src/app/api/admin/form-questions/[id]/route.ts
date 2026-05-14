@@ -16,15 +16,15 @@ function normalizeNullableText(value: string | null | undefined) {
 
 function isTenantAllowed({
   userRole,
-  userCompanyId,
+  activeCompanyId,
   resourceCompanyId,
 }: {
   userRole: string;
-  userCompanyId: string | null;
+  activeCompanyId: string | null;
   resourceCompanyId: string;
 }) {
   if (userRole === "SUPER_ADMIN") return true;
-  return Boolean(userCompanyId) && userCompanyId === resourceCompanyId;
+  return Boolean(activeCompanyId) && activeCompanyId === resourceCompanyId;
 }
 
 export async function PATCH(
@@ -55,7 +55,7 @@ export async function PATCH(
   if (
     !isTenantAllowed({
       userRole: auth.user.role,
-      userCompanyId: auth.user.companyId,
+      activeCompanyId: auth.user.activeCompanyId,
       resourceCompanyId: existingQuestion.block.companyId,
     })
   ) {

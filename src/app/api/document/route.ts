@@ -91,7 +91,14 @@ export async function POST(request: NextRequest) {
     return mapTenantBlocksToFormBlocks(tenantSchema.blocks);
   };
 
-  let schemaBlocks = await resolveSchemaBlocks(auth.user.companyId);
+  if (!auth.user.activeCompanyId) {
+    return NextResponse.json(
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+      { status: 409 },
+    );
+  }
+
+  let schemaBlocks = await resolveSchemaBlocks(auth.user.activeCompanyId);
   if (schemaBlocks.length === 0) {
     return NextResponse.json(
       { error: "Empresa sem blocos ativos de formulario." },
@@ -136,7 +143,6 @@ export async function POST(request: NextRequest) {
         status: true,
         createdById: true,
         payloadJson: true,
-        createdBy: { select: { companyId: true } },
       },
     });
     if (!session) {
@@ -145,7 +151,7 @@ export async function POST(request: NextRequest) {
     if (!canManageProposal(auth.user.role, session.createdById, auth.user.id)) {
       return NextResponse.json({ error: "Sem permissao para finalizar esta proposta." }, { status: 403 });
     }
-    const ownerSchemaBlocks = await resolveSchemaBlocks(session.createdBy.companyId);
+    const ownerSchemaBlocks = await resolveSchemaBlocks(auth.user.activeCompanyId);
     if (ownerSchemaBlocks.length === 0) {
       return NextResponse.json(
         { error: "Empresa da proposta sem blocos ativos de formulario." },

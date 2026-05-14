@@ -36,17 +36,20 @@ function normalizeNullableText(value: string | null | undefined) {
 function ensureBlockTenantAccessOrError({
   companyId,
   authUserRole,
-  authUserCompanyId,
+  authActiveCompanyId,
 }: {
   companyId: string;
   authUserRole: string;
-  authUserCompanyId: string | null;
+  authActiveCompanyId: string | null;
 }) {
   if (authUserRole === "SUPER_ADMIN") return null;
-  if (!authUserCompanyId) {
-    return NextResponse.json({ error: "Administrador sem empresa vinculada." }, { status: 403 });
+  if (!authActiveCompanyId) {
+    return NextResponse.json(
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+      { status: 409 },
+    );
   }
-  if (companyId !== authUserCompanyId) {
+  if (companyId !== authActiveCompanyId) {
     return NextResponse.json(
       { error: "Sem permissao para acessar bloco de outra empresa." },
       { status: 403 },
@@ -83,7 +86,7 @@ export async function GET(
   const tenantError = ensureBlockTenantAccessOrError({
     companyId: block.companyId,
     authUserRole: auth.user.role,
-    authUserCompanyId: auth.user.companyId,
+    authActiveCompanyId: auth.user.activeCompanyId,
   });
   if (tenantError) return tenantError;
 
@@ -143,7 +146,7 @@ export async function POST(
   const tenantError = ensureBlockTenantAccessOrError({
     companyId: block.companyId,
     authUserRole: auth.user.role,
-    authUserCompanyId: auth.user.companyId,
+    authActiveCompanyId: auth.user.activeCompanyId,
   });
   if (tenantError) return tenantError;
 

@@ -27,10 +27,13 @@ export async function GET(request: NextRequest) {
   const companyFilter = parseCompanyFilter(request);
 
   if (!isSuperAdmin) {
-    if (!auth.user.companyId) {
-      return NextResponse.json({ error: "Administrador sem empresa vinculada." }, { status: 403 });
+    if (!auth.user.activeCompanyId) {
+      return NextResponse.json(
+        { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+        { status: 409 },
+      );
     }
-    if (companyFilter && companyFilter !== auth.user.companyId) {
+    if (companyFilter && companyFilter !== auth.user.activeCompanyId) {
       return NextResponse.json(
         { error: "Sem permissao para listar blocos de outra empresa." },
         { status: 403 },
@@ -42,7 +45,7 @@ export async function GET(request: NextRequest) {
     ? companyFilter
       ? { companyId: companyFilter }
       : undefined
-    : { companyId: auth.user.companyId! };
+    : { companyId: auth.user.activeCompanyId! };
 
   const blocks = await db.formBlock.findMany({
     where,
@@ -85,18 +88,21 @@ export async function POST(request: NextRequest) {
   }
 
   const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
-  if (!isSuperAdmin && !auth.user.companyId) {
-    return NextResponse.json({ error: "Administrador sem empresa vinculada." }, { status: 403 });
+  if (!isSuperAdmin && !auth.user.activeCompanyId) {
+    return NextResponse.json(
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+      { status: 409 },
+    );
   }
 
-  if (!isSuperAdmin && parsed.data.companyId && parsed.data.companyId !== auth.user.companyId) {
+  if (!isSuperAdmin && parsed.data.companyId && parsed.data.companyId !== auth.user.activeCompanyId) {
     return NextResponse.json(
       { error: "Nao e permitido criar blocos para outra empresa." },
       { status: 403 },
     );
   }
 
-  const targetCompanyId = isSuperAdmin ? parsed.data.companyId ?? null : auth.user.companyId;
+  const targetCompanyId = isSuperAdmin ? parsed.data.companyId ?? null : auth.user.activeCompanyId;
   if (!targetCompanyId) {
     return NextResponse.json(
       { error: "companyId e obrigatorio para SUPER_ADMIN criar bloco." },

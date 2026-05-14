@@ -1,4 +1,4 @@
-﻿import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -9,18 +9,17 @@ export function isAdminRole(role: UserRole) {
   return role === "SUPER_ADMIN" || role === "ADMIN";
 }
 
+export type AuthUser = {
+  id: string;
+  email: string;
+  role: UserRole;
+  name: string;
+  activeCompanyId: string | null;
+  activeCompany: { id: string; name: string; slug: string } | null;
+};
+
 export type AuthResult =
-  | {
-      ok: true;
-      user: {
-        id: string;
-        email: string;
-        role: UserRole;
-        name: string;
-        companyId: string | null;
-        company: { id: string; name: string; slug: string } | null;
-      };
-    }
+  | { ok: true; user: AuthUser }
   | { ok: false; response: NextResponse };
 
 const SESSION_COOKIE = "formsis_session";
@@ -32,15 +31,21 @@ function getSessionSecret() {
   return encoder.encode(secret);
 }
 
-type SessionPayload = {
+export type SessionPayload = {
   sub: string;
   email: string;
   role: UserRole;
   name: string;
+  activeCompanyId?: string | null;
 };
 
 export async function signSession(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ email: payload.email, role: payload.role, name: payload.name })
+  return new SignJWT({
+    email: payload.email,
+    role: payload.role,
+    name: payload.name,
+    activeCompanyId: payload.activeCompanyId ?? null,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
     .setIssuedAt()
@@ -52,11 +57,14 @@ async function verifySession(token: string): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getSessionSecret());
     if (!payload.sub || !payload.email || !payload.role || !payload.name) return null;
+    const rawActive = (payload as Record<string, unknown>).activeCompanyId;
     return {
       sub: String(payload.sub),
       email: String(payload.email),
       role: String(payload.role) as UserRole,
       name: String(payload.name),
+      activeCompanyId:
+        typeof rawActive === "string" && rawActive.length > 0 ? rawActive : null,
     };
   } catch {
     return null;
@@ -90,6 +98,35 @@ export function clearSessionCookie() {
   return cookieHeader(SESSION_COOKIE, "", 0);
 }
 
+export async function getUserCompanyIds(userId: string): Promise<string[]> {
+  const links = await db.userCompany.findMany({
+    where: { userId },
+    select: { companyId: true },
+  });
+  return links.map((link: { companyId: string }) => link.companyId);
+}
+
+export async function getSelectableCompaniesForUser(
+  userId: string,
+  role: UserRole,
+): Promise<{ id: string; name: string; slug: string }[]> {
+  if (role === "SUPER_ADMIN") {
+    return db.company.findMany({
+      where: { active: true },
+      select: { id: true, name: true, slug: true },
+      orderBy: { name: "asc" },
+    });
+  }
+  const links = await db.userCompany.findMany({
+    where: { userId, company: { active: true } },
+    select: { company: { select: { id: true, name: true, slug: true } } },
+    orderBy: { company: { name: "asc" } },
+  });
+  return links.map(
+    (link: { company: { id: string; name: string; slug: string } }) => link.company,
+  );
+}
+
 export async function requireApiAccess(
   request: NextRequest,
   allowedRoles: UserRole[],
@@ -112,20 +149,13 @@ export async function requireApiAccess(
 
   const user = await db.user.findUnique({
     where: { email: session.email },
-    include: { company: { select: { id: true, name: true, slug: true, active: true } } },
+    select: { id: true, email: true, name: true, role: true, active: true },
   });
 
   if (!user || !user.active) {
     return {
       ok: false,
       response: NextResponse.json({ error: "Usuario nao encontrado ou inativo." }, { status: 403 }),
-    };
-  }
-
-  if (user.role !== "SUPER_ADMIN" && !user.companyId) {
-    return {
-      ok: false,
-      response: NextResponse.json({ error: "Usuario sem empresa vinculada." }, { status: 403 }),
     };
   }
 
@@ -139,6 +169,38 @@ export async function requireApiAccess(
     };
   }
 
+  let activeCompany: { id: string; name: string; slug: string } | null = null;
+  if (session.activeCompanyId) {
+    const company = await db.company.findUnique({
+      where: { id: session.activeCompanyId },
+      select: { id: true, name: true, slug: true, active: true },
+    });
+    if (!company || !company.active) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: "Empresa ativa indisponivel. Selecione outra empresa." },
+          { status: 403 },
+        ),
+      };
+    }
+    if (userRole !== "SUPER_ADMIN") {
+      const link = await db.userCompany.findUnique({
+        where: { userId_companyId: { userId: user.id, companyId: company.id } },
+      });
+      if (!link) {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: "Sem vinculo com a empresa ativa selecionada." },
+            { status: 403 },
+          ),
+        };
+      }
+    }
+    activeCompany = { id: company.id, name: company.name, slug: company.slug };
+  }
+
   return {
     ok: true,
     user: {
@@ -146,26 +208,21 @@ export async function requireApiAccess(
       email: user.email,
       role: userRole,
       name: user.name,
-      companyId: user.companyId,
-      company: user.company
-        ? {
-            id: user.company.id,
-            name: user.company.name,
-            slug: user.company.slug,
-          }
-        : null,
+      activeCompanyId: activeCompany?.id ?? null,
+      activeCompany,
     },
   };
 }
 
-/** Sessao a partir do cookie (Server Components / rotas server). */
-export async function getServerSessionUser(): Promise<{
+export type ServerSessionUser = {
   id: string;
   email: string;
   role: UserRole;
   name: string;
-  companyId: string | null;
-} | null> {
+  activeCompanyId: string | null;
+};
+
+export async function getServerSessionUser(): Promise<ServerSessionUser | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -178,6 +235,6 @@ export async function getServerSessionUser(): Promise<{
     email: user.email,
     role: user.role as UserRole,
     name: user.name,
-    companyId: user.companyId,
+    activeCompanyId: session.activeCompanyId ?? null,
   };
 }

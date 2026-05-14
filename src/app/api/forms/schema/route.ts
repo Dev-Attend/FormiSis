@@ -12,14 +12,14 @@ export async function GET(request: NextRequest) {
   ]);
   if (!auth.ok) return auth.response;
 
-  if (!auth.user.companyId) {
+  if (!auth.user.activeCompanyId) {
     return NextResponse.json(
-      { error: "Usuario sem empresa vinculada. Contacte o administrador." },
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
       { status: 409 },
     );
   }
 
-  const schema = await loadTenantFormSchemaByCompanyId(auth.user.companyId);
+  const schema = await loadTenantFormSchemaByCompanyId(auth.user.activeCompanyId);
   if (!schema) {
     return NextResponse.json(
       { error: "Empresa sem schema ativo de formulario." },
