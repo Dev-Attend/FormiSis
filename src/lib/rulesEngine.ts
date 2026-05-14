@@ -277,10 +277,13 @@ export function listMissingRequiredFields(
   const exclude = new Set(opts?.excludeBlockIds ?? []);
   const extra = new Set(opts?.extraRequiredBlockIds ?? []);
   const schemaBlocks = opts?.schemaBlocks ?? blocos;
+  // Custom blocks (non-`bloco\d+` keys, e.g. imported from PDF) are not gated by
+  // the rules engine — their required fields are always considered.
+  const isLegacyBlockId = (id: string) => /^bloco\d+$/.test(id);
   const eligibleBlocks = schemaBlocks.filter(
     (b) =>
       !exclude.has(b.id) &&
-      (rules.visibleBlocks.has(b.id) || extra.has(b.id)),
+      (!isLegacyBlockId(b.id) || rules.visibleBlocks.has(b.id) || extra.has(b.id)),
   );
   const eligibleFieldIds = new Set(
     eligibleBlocks.flatMap((b) => b.fields.map((f) => f.id)),

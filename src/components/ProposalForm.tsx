@@ -223,7 +223,12 @@ export function ProposalForm({
   const schemaReady = !schemaLoading && !schemaError && schemaBlocks.length > 0;
   const rules = useMemo(() => avaliarRegras(normalizedValues), [normalizedValues]);
   const visibleBlocks = useMemo(() => {
-    const base = schemaBlocks.filter((b) => rules.visibleBlocks.has(b.id));
+    // Legacy blocks (`bloco1`..`bloco20`) are gated by the rules engine.
+    // Custom blocks imported from PDF use semantic keys and bypass that gate.
+    const isLegacyBlockId = (id: string) => /^bloco\d+$/.test(id);
+    const base = schemaBlocks.filter(
+      (b) => !isLegacyBlockId(b.id) || rules.visibleBlocks.has(b.id),
+    );
     const showPreSalesInternalBlock =
       mode === "preSalesReview" ||
       userRole === "PRE_VENDAS" ||

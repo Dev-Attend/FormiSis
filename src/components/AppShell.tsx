@@ -102,34 +102,75 @@ export function AppShell({ active, children }: { active: NavKey; children: React
             ) : null}
           </nav>
           {user && (user.activeCompany || canSwitchCompany) ? (
-            <div className="mx-2 rounded-xl border border-surface-700/55 bg-surface-950/35 p-3 text-xs text-surface-300">
-              <p className="text-[10px] uppercase tracking-wider text-surface-400">
+            <div className="mx-2 mt-2 rounded-xl border border-surface-700/55 bg-surface-950/40 p-3">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-surface-400">
                 Empresa ativa
               </p>
-              <p className="mt-0.5 font-medium text-surface-0">
-                {user.activeCompany?.name ?? "Nenhuma selecionada"}
-              </p>
+              <div className="mt-2 flex items-center gap-2.5">
+                <span
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-500/85 text-sm font-semibold text-white shadow-sm shadow-brand-900/30"
+                  aria-hidden
+                >
+                  {(user.activeCompany?.name ?? "?").trim().charAt(0).toUpperCase() || "?"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-surface-0">
+                    {user.activeCompany?.name ?? "Nenhuma selecionada"}
+                  </p>
+                  {user.activeCompany?.slug ? (
+                    <p className="truncate text-[10px] text-surface-400">@{user.activeCompany.slug}</p>
+                  ) : null}
+                </div>
+              </div>
               {canSwitchCompany ? (
                 <button
                   type="button"
                   onClick={() => router.push("/select-company")}
-                  className="mt-2 w-full rounded-lg border border-surface-600/60 bg-surface-800/40 px-2 py-1.5 text-[11px] font-medium text-surface-100 transition hover:border-brand-400/60 hover:bg-surface-800/80"
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-surface-600/60 bg-surface-800/40 px-2.5 py-1.5 text-[11px] font-medium text-surface-100 transition hover:border-brand-400/60 hover:bg-surface-800/80"
                 >
+                  <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden>
+                    <path
+                      d="M7 4l-3 3 3 3M4 7h9a3 3 0 013 3v0M13 16l3-3-3-3M16 13H7a3 3 0 01-3-3v0"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                   Trocar empresa
                 </button>
               ) : null}
             </div>
           ) : null}
-          <div className="m-2 mt-2 space-y-2 rounded-xl border border-surface-700/55 bg-surface-950/35 p-3.5 text-xs text-surface-300">
-            <div>
-              <p className="font-medium text-surface-0">{user?.name ?? "..."}</p>
-              <p className="mt-0.5 text-[11px] text-surface-400">{user?.role ? perfilUsuarioPt(user.role) : ""}</p>
+          <div className="m-2 mt-2 rounded-xl border border-surface-700/55 bg-surface-950/40 p-3">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-sm font-semibold text-white shadow-sm shadow-brand-900/30"
+                aria-hidden
+              >
+                {(user?.name ?? "?").trim().charAt(0).toUpperCase() || "?"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-surface-0">{user?.name ?? "..."}</p>
+                <p className="mt-0.5 truncate text-[10px] uppercase tracking-wider text-brand-300">
+                  {user?.role ? perfilUsuarioPt(user.role) : ""}
+                </p>
+              </div>
             </div>
             <button
               type="button"
               onClick={() => void logout()}
-              className="w-full rounded-lg border border-surface-600/60 bg-surface-800/50 px-2 py-2 text-left text-[11px] font-medium text-surface-100 transition hover:border-surface-500/80 hover:bg-surface-800/80"
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-surface-600/60 bg-surface-800/50 px-2.5 py-1.5 text-[11px] font-medium text-surface-100 transition hover:border-red-400/55 hover:bg-red-500/12 hover:text-red-100"
             >
+              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden>
+                <path
+                  d="M12 4h2.5A1.5 1.5 0 0116 5.5v9A1.5 1.5 0 0114.5 16H12M9 13l-3-3 3-3M6 10h8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
               Sair
             </button>
           </div>

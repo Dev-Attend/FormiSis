@@ -24,6 +24,7 @@
 | Forms | `react-hook-form` + `@hookform/resolvers` | `^7` / `^5` |
 | Validação de schema | Zod | `^4.3.6` |
 | Geração de documentos | `docx` + `pdf-lib` | `^9` / `^1.17` |
+| Extração de texto de PDF | `unpdf` (wrapper de pdfjs serverless-friendly) | `^1` |
 | Styling | Tailwind CSS v4 | `^4` (via PostCSS) |
 | Logging | Pino | `^10.3.1` |
 | Testes | Vitest | `^4.1.5` |
@@ -46,7 +47,7 @@ FormiSis/
 |   |   |   |-- forms/               # GET/POST /forms, /forms/[id], GET /forms/schema
 |   |   |   |-- document/            # POST gera DOCX/PDF
 |   |   |   |-- submissions/         # GET /submissions
-|   |   |   `-- admin/               # CRUD usuarios, empresas e Form Builder
+|   |   |   `-- admin/               # CRUD usuarios, empresas, Form Builder e import de PDF
 |   |   |-- admin/
 |   |   |   |-- questionarios/       # UI do Form Builder
 |   |   |   `-- usuarios/
@@ -59,7 +60,9 @@ FormiSis/
 |   |   |-- ProposalForm.tsx
 |   |   |-- AppShell.tsx
 |   |   |-- AppCard.tsx
-|   |   `-- PageHeader.tsx
+|   |   |-- PageHeader.tsx
+|   |   `-- admin/
+|   |       `-- ImportPdfModal.tsx   # Modal de import de PDF (upload -> preview -> commit)
 |   |-- lib/
 |   |   |-- auth.ts                  # JWT + requireApiAccess
 |   |   |-- db.ts                    # Prisma singleton
@@ -71,7 +74,12 @@ FormiSis/
 |   |   |-- proposalPersistence.ts
 |   |   |-- preSalesMeta.ts
 |   |   |-- preSalesValidationMap.ts
-|   |   `-- rateLimit.ts
+|   |   |-- rateLimit.ts
+|   |   |-- pdfImport/
+|   |   |   `-- blockParser.ts       # Extrai e estrutura blocos/perguntas de PDF
+|   |   `-- validators/
+|   |       |-- adminFormBuilder.ts
+|   |       `-- pdfImport.ts         # Zod schemas do import de PDF
 |   `-- proxy.ts                     # Middleware de presenca de cookie
 |-- prisma/
 |   |-- schema.prisma
@@ -254,6 +262,49 @@ Exemplo de resposta JSON:
    - Somente blocos/perguntas ativos (`active = true`) aparecem em `GET /api/forms/schema`.
    - Toda mutação relevante (criação, edição, desativação) gera `AuditLog`.
 
+### Importação de Questionários a partir de PDF
+
+`ADMIN` e `SUPER_ADMIN` podem popular blocos e perguntas de uma empresa a partir de um PDF estruturado, sem rodar script ou seed.
+
+1. **Acesso**: botão **Importar PDF** no header de `/admin/questionarios`. Para `SUPER_ADMIN`, exige uma empresa selecionada no seletor da página.
+2. **Formato esperado do PDF**: cada seção é um título numerado (`N. Titulo`) seguido das perguntas numeradas dentro dela (`1. Pergunta`, `2. Pergunta`, ...). O parser foi validado com o questionário V8 (SD-WAN + Starlink), mas serve qualquer PDF nesse padrão.
+3. **Fluxo**:
+   - Upload do PDF (multipart) -> `POST /api/admin/form-blocks/import/parse` extrai texto via `unpdf` e devolve um preview estruturado.
+   - O modal mostra preview editável: título do bloco, `blockKey` (slug do título), ordem sugerida, e para cada pergunta o `fieldId`, label, tipo sugerido, opções e obrigatoriedade. Tudo é editável antes do commit.
+   - Confirmação -> `POST /api/admin/form-blocks/import/commit` persiste com auditoria (`FORM_BLOCKS_IMPORTED_FROM_PDF`).
+4. **Heurísticas de tipo de pergunta** (em [src/lib/pdfImport/blockParser.ts](src/lib/pdfImport/blockParser.ts)):
+   - "Existe...?", "Há...?", "Possui...?", "O ambiente...?", etc. -> `radio` com opções `Sim`/`Nao`.
+   - "Quantos...?", "Quantas...?", "Quantidade..." -> `number`.
+   - "Razão Social", "Endereço", "Site", "Contato", "Responsável", "Operadora" -> `text`.
+   - Demais perguntas terminadas em `?` -> `textarea`; rótulos curtos sem `?` -> `text`.
+5. **Detecção de colisão**: o preview marca blocos cuja `blockKey` já existe na empresa. Por bloco, o admin escolhe a estratégia:
+   - `skip` (padrão para colisões): mantém o existente.
+   - `replace`: apaga todas as perguntas antigas e recria com o conteúdo importado.
+   - `rename`: cria um novo bloco com sufixo numérico (`<key>_2`, `<key>_3`, ...).
+6. **Robustez do parser**:
+   - Quebras de linha do `unpdf` são normalizadas: o texto é fatiado antes de cada `N. ` para que questionários extraídos em uma única linha funcionem do mesmo jeito.
+   - Itens cujo texto já termina em `?`, `!` ou `.` não absorvem linhas subsequentes (evita anexar rodapé/disclaimer do PDF como label de pergunta).
+   - Todos os labels passam por um corte rígido de 160 caracteres, alinhado ao schema Zod.
+7. **Permissões**:
+   - `ADMIN` importa somente para a `activeCompanyId` da sessão. Tentar passar outro `companyId` retorna `403`.
+   - `SUPER_ADMIN` importa para qualquer empresa ativa (campo `companyId` no payload).
+   - Empresa inexistente/inativa -> `400`. Sessão sem `activeCompanyId` em rota tenant-aware -> `409 redirectTo=/select-company`.
+
+#### Endpoints
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `POST` | `/api/admin/form-blocks/import/parse` | Recebe `multipart/form-data` com `file` (PDF) e devolve preview estruturado com flags de colisão. Limite de 10MB. |
+| `POST` | `/api/admin/form-blocks/import/commit` | Persiste o preview confirmado (com edições) aplicando a estratégia escolhida por bloco. Gera `AuditLog`. |
+
+#### Blocos importados no fluxo comercial
+
+Os blocos criados pelo import usam `blockKey` semântica (`informacoes_corporativas`, `objetivo_da_solucao`, etc.), e portanto **não casam** com o whitelist legado `bloco1`..`bloco20` do `rulesEngine.ts`. Para que apareçam na `ProposalForm`:
+
+- `ProposalForm.tsx` agora trata blocos com chave fora do padrão `bloco\d+` como **sempre visíveis** (sem passar pelo gate condicional do rulesEngine).
+- `listMissingRequiredFields` segue a mesma exceção: campos obrigatórios de blocos customizados sempre são considerados.
+- A lógica condicional existente para `bloco12`, `bloco17` e `bloco19` continua intacta para os blocos legados.
+
 ---
 ## 4. AI Operational Rules (Mental Model)
 
@@ -295,7 +346,7 @@ Exemplo de resposta JSON:
 | # | Regra |
 |---|---|
 | A1 | Novos blocos/perguntas por empresa devem ser cadastrados no banco (`FormBlock`/`FormQuestion`) e entregues por `GET /api/forms/schema`. Evite hard-code por tenant no frontend/backend. |
-| A2 | Blocos condicionalmente visíveis (`bloco12`, `bloco17`, `bloco19`) são controlados **somente** pelo `rulesEngine`. Nunca hard-code visibilidade em componente. |
+| A2 | Blocos legados (`bloco1`..`bloco20`) e os condicionais (`bloco12`, `bloco17`, `bloco19`) são gated pelo `rulesEngine`. Blocos com chave **fora** do padrão `bloco\d+` (ex.: importados de PDF) **bypassam** o gate em `ProposalForm.tsx` e em `listMissingRequiredFields`. Nunca hard-code visibilidade em componente. |
 | A3 | `@prisma/client` é `serverExternalPackage` (veja `next.config.ts`). Não importe Prisma em Client Components. |
 | A4 | O middleware (`proxy.ts`) faz **apenas** verificação de presença do cookie. Verificação de role e validade do JWT ocorre nas API routes via `requireApiAccess`. |
 | A5 | `AuditLog` deve ser criado para toda mutação de `FormSession`, `Submission`, `Company` e `User`. |

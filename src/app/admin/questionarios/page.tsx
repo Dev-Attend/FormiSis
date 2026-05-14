@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { AppCard } from "@/components/AppCard";
 import { PageHeader } from "@/components/PageHeader";
+import { ImportPdfModal } from "@/components/admin/ImportPdfModal";
 import { btnPrimary, btnSecondary, inputClass, labelClass } from "@/lib/uiClasses";
 
 type CompanyRow = {
@@ -39,6 +40,7 @@ export default function AdminQuestionariosPage() {
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [blocks, setBlocks] = useState<BlockRow[]>([]);
   const [editingBlock, setEditingBlock] = useState<BlockRow | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [createBlockKey, setCreateBlockKey] = useState("");
   const [createTitle, setCreateTitle] = useState("");
@@ -287,9 +289,24 @@ export default function AdminQuestionariosPage() {
         title="Questionarios"
         description="Gestao de blocos dos questionarios dinamicos por empresa."
         action={
-          <Link className={btnSecondary} href="/admin/usuarios">
-            Gerir usuarios
-          </Link>
+          <>
+            <button
+              type="button"
+              className={btnSecondary}
+              onClick={() => setImportOpen(true)}
+              disabled={isSuperAdmin && !selectedCompanyId}
+              title={
+                isSuperAdmin && !selectedCompanyId
+                  ? "Selecione uma empresa para importar"
+                  : undefined
+              }
+            >
+              Importar PDF
+            </button>
+            <Link className={btnSecondary} href="/admin/usuarios">
+              Gerir usuarios
+            </Link>
+          </>
         }
       />
 
@@ -451,6 +468,15 @@ export default function AdminQuestionariosPage() {
           </tbody>
         </table>
       </AppCard>
+
+      <ImportPdfModal
+        open={importOpen}
+        companyId={isSuperAdmin ? selectedCompanyId : ""}
+        onClose={() => setImportOpen(false)}
+        onCompleted={() => {
+          void reloadBlocks();
+        }}
+      />
 
       {editingBlock ? (
         <div
