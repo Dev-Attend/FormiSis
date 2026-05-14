@@ -113,26 +113,55 @@ requireApiAccess(request, allowedRoles[])
 ```
 SUPER_ADMIN
   -> administra a plataforma inteira
-  -> pode ter companyId null
+  -> pode ter zero ou mais empresas vinculadas (acesso global)
   -> cria/lista/edita/desativa empresas
-  -> cria usuarios para qualquer empresa, incluindo o primeiro ADMIN de cada tenant
+  -> cria usuarios para qualquer empresa, vinculando a 1 ou N empresas
   -> lista usuarios de todas as empresas e pode filtrar por companyId
 
 ADMIN
-  -> administra apenas a propria empresa
-  -> deve ter companyId obrigatoriamente
-  -> usuarios criados por ADMIN herdam auth.user.companyId
+  -> administra apenas a empresa ativa da sessao
+  -> precisa estar vinculado a pelo menos uma empresa via UserCompany
+  -> usuarios criados por ADMIN sao vinculados automaticamente a empresa ativa
   -> nao cria empresas e nao pode vincular usuarios a outra empresa
 
 COMERCIAL / PRE_VENDAS / LEITURA
-  -> seguem o fluxo operacional existente, sempre vinculados a uma empresa
+  -> seguem o fluxo operacional existente, sempre vinculados a uma ou mais empresas
 ```
+
+A relacao usuario-empresa e **N:N** atraves da tabela `UserCompany`. Cada usuario operacional pode pertencer a uma ou mais empresas; a empresa "ativa" da sessao vive no JWT (`activeCompanyId`) e e escolhida no login (ver "Sessao e empresa ativa" abaixo).
 
 Endpoints administrativos:
 1. `GET/POST /api/admin/companies` - apenas `SUPER_ADMIN`.
 2. `PATCH /api/admin/companies/[id]` - apenas `SUPER_ADMIN`.
-3. `GET/POST /api/admin/users` - `SUPER_ADMIN` global; `ADMIN` restrito a propria empresa.
-4. `PATCH /api/admin/users/[id]` - `SUPER_ADMIN` global; `ADMIN` restrito a usuarios da propria empresa.
+3. `GET/POST /api/admin/users` - `SUPER_ADMIN` global; `ADMIN` restrito a empresa ativa. Payload usa `companyIds: string[]`.
+4. `PATCH /api/admin/users/[id]` - `SUPER_ADMIN` global; `ADMIN` restrito a usuarios da propria empresa. Aceita `companyIds: string[]` para reconciliar vinculos.
+
+### Sessao e empresa ativa
+
+A escolha da empresa ativa acontece no login e fica no JWT como `activeCompanyId`:
+
+```
+POST /api/auth/login
+  -> selectableCompanies = vinculos do usuario (ou todas ativas se SUPER_ADMIN)
+  -> 0 empresas e nao SUPER_ADMIN -> 403
+  -> 1 empresa  -> activeCompanyId definido no JWT, redirect /dashboard
+  -> 2+ empresas -> JWT sem activeCompanyId, requiresCompanySelection=true, UI -> /select-company
+
+GET /api/auth/companies
+  -> lista empresas selecionaveis para o usuario corrente
+
+POST /api/auth/select-company { companyId }
+  -> valida sessao + vinculo (ou role SUPER_ADMIN) + empresa ativa
+  -> reassina JWT preservando sub/email/role/name + novo activeCompanyId
+  -> AuditLog COMPANY_SELECTED
+
+GET /api/auth/me
+  -> retorna user + activeCompany + availableCompanies (para o AppShell)
+```
+
+Todas as rotas tenant-aware (`/api/forms/schema`, `/api/admin/form-blocks*`, `/api/admin/form-questions/[id]`, `/api/document`, `/api/forms/[id]`) leem `auth.user.activeCompanyId`. Se ausente em rota tenant-aware, respondem `409` com `{ error, redirectTo: "/select-company" }`.
+
+A tela `/select-company` (estilo seletor de perfis do Chrome) e usada quando o usuario tem 2+ empresas ou quando ele clica "Trocar empresa" no AppShell. SUPER_ADMIN ve todas as empresas ativas; demais perfis veem apenas as vinculadas em `UserCompany`.
 
 ### Questionários Dinâmicos por Empresa / Multi-tenancy
 
@@ -244,8 +273,9 @@ Exemplo de resposta JSON:
 | R8 | **`adminPolicy.assertNotLastActiveAdmin()`** deve ser chamado antes de qualquer operação que rebaixe role ou desative um usuário ADMIN. |
 | R9 | **Status da proposta segue FSM em `proposalWorkflow.ts`**. Não faça transições diretas no DB sem chamar `canTransition(from, to, role)`. |
 | R10 | **Reabertura de proposta `FINALIZED → IN_PROGRESS` é exclusiva de `ADMIN`**. |
-| R11 | **`SUPER_ADMIN` é o único perfil que pode ficar sem `companyId`**. `ADMIN`, `COMERCIAL`, `PRE_VENDAS` e `LEITURA` devem sempre estar vinculados a uma empresa ativa. |
+| R11 | **`SUPER_ADMIN` é o único perfil que pode ficar sem vínculos em `UserCompany`**. `ADMIN`, `COMERCIAL`, `PRE_VENDAS` e `LEITURA` devem sempre estar vinculados a pelo menos uma empresa ativa. |
 | R12 | **APIs de empresas são exclusivas de `SUPER_ADMIN`**. Gestão de usuários aceita `SUPER_ADMIN` ou `ADMIN`, sempre respeitando escopo por empresa. |
+| R13 | **Rotas tenant-aware leem `auth.user.activeCompanyId` (JWT)**, nunca a empresa "primária" do usuário. Se ausente, responder `409` com `{ error, redirectTo: "/select-company" }`. Trocar de empresa = reassinar JWT em `POST /api/auth/select-company`. |
 
 #### 🟡 ESTILO E PADRÕES
 
@@ -334,11 +364,13 @@ DRAFT ──────→ IN_PROGRESS → PAUSED ──┐
 
 | Função | Contexto de uso |
 |---|---|
-| `signSession(payload)` | API route de login |
-| `buildSessionCookie(token)` | Header `Set-Cookie` no login |
+| `signSession(payload)` | API route de login e /api/auth/select-company; payload aceita `activeCompanyId` |
+| `buildSessionCookie(token)` | Header `Set-Cookie` no login e ao trocar empresa |
 | `clearSessionCookie()` | Header `Set-Cookie` no logout |
-| `requireApiAccess(req, roles[])` | **Toda** API route protegida; `SUPER_ADMIN` herda acesso quando `ADMIN` é permitido |
-| `getServerSessionUser()` | Server Components e layouts |
+| `requireApiAccess(req, roles[])` | **Toda** API route protegida; `SUPER_ADMIN` herda acesso quando `ADMIN` é permitido. Expõe `auth.user.activeCompanyId` e `auth.user.activeCompany` |
+| `getServerSessionUser()` | Server Components e layouts; retorna `activeCompanyId` da sessão |
+| `getSelectableCompaniesForUser(userId, role)` | Lista empresas que o usuário pode selecionar (vínculos em `UserCompany`, ou todas ativas se `SUPER_ADMIN`) |
+| `getUserCompanyIds(userId)` | Retorna apenas os IDs das empresas vinculadas |
 
 ---
 
@@ -347,13 +379,18 @@ DRAFT ──────→ IN_PROGRESS → PAUSED ──┐
 ```
 Company { id, name, slug, active, createdAt, updatedAt }
   -> slug unico (tenant)
-  -> 1:N com User
+  -> N:N com User via UserCompany
   -> 1:N com FormBlock
 
-User { id, name, email, passwordHash, role: UserRole, companyId?, active, createdAt, updatedAt }
+User { id, name, email, passwordHash, role: UserRole, active, createdAt, updatedAt }
   -> UserRole: SUPER_ADMIN | ADMIN | COMERCIAL | PRE_VENDAS | LEITURA
-  -> companyId referencia Company (isolamento por tenant)
-  -> companyId null permitido apenas para SUPER_ADMIN
+  -> NAO tem mais companyId direto (substituido por UserCompany N:N)
+  -> SUPER_ADMIN pode ficar sem vinculos; demais perfis precisam de >=1
+
+UserCompany { id, userId, companyId, createdAt, updatedAt }
+  -> @@unique([userId, companyId]) + indices em userId e companyId
+  -> cascade em ambos os lados
+  -> origem de verdade para vinculos usuario<->empresa
 
 FormBlock { id, companyId, blockKey, title, description?, order, active, createdAt, updatedAt }
   -> unico por tenant em (companyId, blockKey)
