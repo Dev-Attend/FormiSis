@@ -19,14 +19,16 @@ type CompanyRow = {
   _count?: { users: number };
 };
 
+type UserCompany = { id: string; name: string; slug: string };
+
 type UserRow = {
   id: string;
   name: string;
   email: string;
   role: string;
   active: boolean;
-  companyId: string | null;
-  company: { id: string; name: string; slug: string } | null;
+  companies: UserCompany[];
+  companyIds: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -38,6 +40,13 @@ const roles = [
   { value: "PRE_VENDAS", label: "Pre-vendas" },
   { value: "LEITURA", label: "Leitura" },
 ] as const;
+
+function toggleId(set: ReadonlySet<string>, id: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
 
 export default function AdminUsuariosPage() {
   const router = useRouter();
@@ -56,14 +65,14 @@ export default function AdminUsuariosPage() {
   const [createEmail, setCreateEmail] = useState("");
   const [createPassword, setCreatePassword] = useState("");
   const [createRole, setCreateRole] = useState<string>("COMERCIAL");
-  const [createCompanyId, setCreateCompanyId] = useState<string>("");
+  const [createCompanyIds, setCreateCompanyIds] = useState<Set<string>>(new Set());
 
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole] = useState<string>("COMERCIAL");
   const [editActive, setEditActive] = useState(true);
   const [editPassword, setEditPassword] = useState("");
-  const [editCompanyId, setEditCompanyId] = useState<string>("");
+  const [editCompanyIds, setEditCompanyIds] = useState<Set<string>>(new Set());
 
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanySlug, setNewCompanySlug] = useState("");
@@ -124,16 +133,12 @@ export default function AdminUsuariosPage() {
     }
 
     if (me.user.role === "SUPER_ADMIN") {
-      const companyRows = await loadCompanies();
-      if (!createCompanyId && companyRows.length > 0) {
-        const defaultCompany = companyRows.find((company) => company.active) ?? companyRows[0];
-        setCreateCompanyId(defaultCompany.id);
-      }
+      await loadCompanies();
     }
 
     await loadUsers(me.user.role);
     setLoading(false);
-  }, [createCompanyId, loadCompanies, loadUsers, router]);
+  }, [loadCompanies, loadUsers, router]);
 
   useEffect(() => {
     void load();
@@ -152,12 +157,13 @@ export default function AdminUsuariosPage() {
     };
 
     if (isSuperAdmin) {
-      if (!createCompanyId) {
+      const ids = Array.from(createCompanyIds);
+      if (createRole !== "SUPER_ADMIN" && ids.length === 0) {
         setSaving(false);
-        setError("Selecione a empresa para criar o usuario.");
+        setError("Selecione ao menos uma empresa para o usuario.");
         return;
       }
-      payload.companyId = createCompanyId;
+      payload.companyIds = ids;
     }
 
     const res = await fetch("/api/admin/users", {
@@ -177,6 +183,7 @@ export default function AdminUsuariosPage() {
     setCreateEmail("");
     setCreatePassword("");
     setCreateRole("COMERCIAL");
+    setCreateCompanyIds(new Set());
     await load();
   };
 
@@ -199,12 +206,13 @@ export default function AdminUsuariosPage() {
     }
 
     if (isSuperAdmin) {
-      if (!editCompanyId) {
+      const ids = Array.from(editCompanyIds);
+      if (editRole !== "SUPER_ADMIN" && ids.length === 0) {
         setSaving(false);
-        setError("Selecione a empresa do usuario.");
+        setError("Selecione ao menos uma empresa para o usuario.");
         return;
       }
-      payload.companyId = editCompanyId;
+      payload.companyIds = ids;
     }
 
     const res = await fetch(`/api/admin/users/${encodeURIComponent(editingUser.id)}`, {
@@ -474,22 +482,42 @@ export default function AdminUsuariosPage() {
           </label>
 
           {isSuperAdmin ? (
-            <label className={`${labelClass} md:col-span-2`}>
-              Empresa
-              <select
-                required
-                className={inputClass}
-                value={createCompanyId}
-                onChange={(e) => setCreateCompanyId(e.target.value)}
-              >
-                <option value="">Selecione</option>
-                {activeCompanies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name} ({company.slug})
-                  </option>
-                ))}
-              </select>
-            </label>
+            <fieldset className={`md:col-span-2 ${labelClass}`}>
+              <legend className={labelClass}>Empresas vinculadas</legend>
+              <p className="mt-1 text-[11px] font-normal text-surface-500">
+                Marque uma ou mais empresas que o usuario poderá selecionar ao entrar.
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {activeCompanies.length === 0 ? (
+                  <p className="text-xs text-surface-500">Nenhuma empresa ativa disponivel.</p>
+                ) : (
+                  activeCompanies.map((company) => {
+                    const checked = createCompanyIds.has(company.id);
+                    return (
+                      <label
+                        key={company.id}
+                        className="flex items-center gap-2 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-xs font-medium text-surface-800 transition hover:border-brand-300"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-surface-300 text-brand-500 focus:ring-brand-500/30"
+                          checked={checked}
+                          onChange={() =>
+                            setCreateCompanyIds((prev) => toggleId(prev, company.id))
+                          }
+                        />
+                        <span className="flex flex-col leading-tight">
+                          <span>{company.name}</span>
+                          <span className="text-[10px] uppercase tracking-wider text-surface-500">
+                            {company.slug}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </fieldset>
           ) : null}
 
           <div className="md:col-span-2">
@@ -507,7 +535,7 @@ export default function AdminUsuariosPage() {
               <tr className="border-b border-surface-200/90 text-left text-xs font-medium uppercase tracking-wide text-surface-500">
                 <th className="px-4 py-3 sm:px-5">Nome</th>
                 <th className="px-4 py-3 sm:px-5">E-mail</th>
-                {isSuperAdmin ? <th className="px-4 py-3 sm:px-5">Empresa</th> : null}
+                {isSuperAdmin ? <th className="px-4 py-3 sm:px-5">Empresas</th> : null}
                 <th className="px-4 py-3 sm:px-5">Perfil</th>
                 <th className="px-4 py-3 sm:px-5">Estado</th>
                 <th className="px-4 py-3 text-right sm:px-5">Acoes</th>
@@ -520,7 +548,9 @@ export default function AdminUsuariosPage() {
                   <td className="px-4 py-3 text-sm text-surface-600 sm:px-5">{u.email}</td>
                   {isSuperAdmin ? (
                     <td className="px-4 py-3 text-sm text-surface-600 sm:px-5">
-                      {u.company ? `${u.company.name} (${u.company.slug})` : "Sem empresa"}
+                      {u.companies.length > 0
+                        ? u.companies.map((company) => company.name).join(", ")
+                        : "Sem empresa"}
                     </td>
                   ) : null}
                   <td className="px-4 py-3 sm:px-5">{perfilUsuarioPt(u.role)}</td>
@@ -546,7 +576,7 @@ export default function AdminUsuariosPage() {
                         setEditRole(u.role);
                         setEditActive(u.active);
                         setEditPassword("");
-                        setEditCompanyId(u.companyId ?? "");
+                        setEditCompanyIds(new Set(u.companyIds));
                       }}
                     >
                       Editar
@@ -583,22 +613,39 @@ export default function AdminUsuariosPage() {
               </label>
 
               {isSuperAdmin ? (
-                <label className={labelClass}>
-                  Empresa
-                  <select
-                    required
-                    className={inputClass}
-                    value={editCompanyId}
-                    onChange={(e) => setEditCompanyId(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    {activeCompanies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name} ({company.slug})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <fieldset className={labelClass}>
+                  <legend className={labelClass}>Empresas vinculadas</legend>
+                  <div className="mt-2 grid max-h-40 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {activeCompanies.length === 0 ? (
+                      <p className="text-xs text-surface-500">Nenhuma empresa ativa disponivel.</p>
+                    ) : (
+                      activeCompanies.map((company) => {
+                        const checked = editCompanyIds.has(company.id);
+                        return (
+                          <label
+                            key={company.id}
+                            className="flex items-center gap-2 rounded-lg border border-surface-200 bg-surface-0 px-3 py-2 text-xs font-medium text-surface-800 transition hover:border-brand-300"
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-surface-300 text-brand-500 focus:ring-brand-500/30"
+                              checked={checked}
+                              onChange={() =>
+                                setEditCompanyIds((prev) => toggleId(prev, company.id))
+                              }
+                            />
+                            <span className="flex flex-col leading-tight">
+                              <span>{company.name}</span>
+                              <span className="text-[10px] uppercase tracking-wider text-surface-500">
+                                {company.slug}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </fieldset>
               ) : null}
 
               <label className={labelClass}>

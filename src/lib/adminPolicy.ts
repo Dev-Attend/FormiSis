@@ -26,3 +26,18 @@ export async function assertNotLastActiveAdmin(
   }
   return { ok: true as const };
 }
+
+/** Perfis operacionais devem ter pelo menos uma empresa vinculada. */
+export function assertOperationalUserHasCompany(
+  role: UserRole,
+  companyIds: string[] | undefined | null,
+) {
+  if (role === "SUPER_ADMIN") return { ok: true as const };
+  if (!companyIds || companyIds.length === 0) {
+    return {
+      ok: false as const,
+      message: "Usuarios que nao sao SUPER_ADMIN devem ter ao menos uma empresa vinculada.",
+    };
+  }
+  return { ok: true as const };
+}
