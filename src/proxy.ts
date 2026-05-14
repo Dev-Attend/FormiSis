@@ -10,7 +10,8 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/submissoes") ||
     pathname.startsWith("/propostas") ||
     pathname.startsWith("/pre-vendas") ||
-    pathname.startsWith("/admin");
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/select-company");
   if (!needsAuth) {
     return NextResponse.next();
   }
@@ -38,5 +39,6 @@ export const config = {
     "/pre-vendas/:path*",
     "/admin",
     "/admin/:path*",
+    "/select-company",
   ],
 };

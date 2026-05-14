@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -7,12 +7,20 @@ import { perfilUsuarioPt } from "@/lib/uiLabels";
 
 type NavKey = "dashboard" | "propostas" | "documentos" | "validacoes" | "admin";
 
+type Company = { id: string; name: string; slug: string };
+type ShellUser = {
+  name: string;
+  role: string;
+  activeCompany: Company | null;
+};
+
 const navItemBase = "block rounded-lg px-3 py-2.5 text-sm font-medium transition";
 
 export function AppShell({ active, children }: { active: NavKey; children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<{ name: string; role: string } | null>(null);
+  const [user, setUser] = useState<ShellUser | null>(null);
+  const [availableCompanies, setAvailableCompanies] = useState<Company[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -22,8 +30,16 @@ export function AppShell({ active, children }: { active: NavKey; children: React
         router.replace(`/login?redirect=${encodeURIComponent(dest)}`);
         return;
       }
-      const me = (await meRes.json()) as { user: { name: string; role: string } };
-      setUser(me.user);
+      const me = (await meRes.json()) as {
+        user: { name: string; role: string; activeCompany: Company | null };
+        availableCompanies: Company[];
+      };
+      setUser({
+        name: me.user.name,
+        role: me.user.role,
+        activeCompany: me.user.activeCompany,
+      });
+      setAvailableCompanies(me.availableCompanies ?? []);
     })();
   }, [router, pathname]);
 
@@ -47,6 +63,9 @@ export function AppShell({ active, children }: { active: NavKey; children: React
   const navItemNovaClass = isNova
     ? `${navItemBase} bg-brand-500/22 text-white ring-1 ring-brand-300/35`
     : `${navItemBase} text-surface-400 hover:bg-white/8 hover:text-surface-0`;
+
+  const canSwitchCompany =
+    user?.role === "SUPER_ADMIN" || availableCompanies.length > 1;
 
   return (
     <main className="h-screen overflow-hidden">
@@ -82,7 +101,26 @@ export function AppShell({ active, children }: { active: NavKey; children: React
               </Link>
             ) : null}
           </nav>
-          <div className="m-2 mt-auto space-y-2 rounded-xl border border-surface-700/55 bg-surface-950/35 p-3.5 text-xs text-surface-300">
+          {user && (user.activeCompany || canSwitchCompany) ? (
+            <div className="mx-2 rounded-xl border border-surface-700/55 bg-surface-950/35 p-3 text-xs text-surface-300">
+              <p className="text-[10px] uppercase tracking-wider text-surface-400">
+                Empresa ativa
+              </p>
+              <p className="mt-0.5 font-medium text-surface-0">
+                {user.activeCompany?.name ?? "Nenhuma selecionada"}
+              </p>
+              {canSwitchCompany ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/select-company")}
+                  className="mt-2 w-full rounded-lg border border-surface-600/60 bg-surface-800/40 px-2 py-1.5 text-[11px] font-medium text-surface-100 transition hover:border-brand-400/60 hover:bg-surface-800/80"
+                >
+                  Trocar empresa
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="m-2 mt-2 space-y-2 rounded-xl border border-surface-700/55 bg-surface-950/35 p-3.5 text-xs text-surface-300">
             <div>
               <p className="font-medium text-surface-0">{user?.name ?? "..."}</p>
               <p className="mt-0.5 text-[11px] text-surface-400">{user?.role ? perfilUsuarioPt(user.role) : ""}</p>
