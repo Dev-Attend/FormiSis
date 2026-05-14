@@ -321,13 +321,23 @@ async function upsertCompany({ name, slug }) {
   });
 }
 
-async function upsertUser(email, name, role, password, companyId) {
+async function upsertUser(email, name, role, password, companyIds = []) {
   const passwordHash = await bcrypt.hash(password, 10);
-  await prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { email },
-    update: { name, role, passwordHash, active: true, companyId },
-    create: { email, name, role, passwordHash, active: true, companyId },
+    update: { name, role, passwordHash, active: true },
+    create: { email, name, role, passwordHash, active: true },
   });
+
+  for (const companyId of companyIds) {
+    await prisma.userCompany.upsert({
+      where: { userId_companyId: { userId: user.id, companyId } },
+      update: {},
+      create: { userId: user.id, companyId },
+    });
+  }
+
+  return user;
 }
 
 async function upsertBlockWithQuestions(companyId, blockConfig) {
@@ -392,7 +402,7 @@ async function main() {
     "Super Administrador",
     UserRole.SUPER_ADMIN,
     process.env.FORMSIS_ADMIN_PASSWORD ?? "Admin@123",
-    null,
+    [],
   );
 
   await seedCompanySchema(attend.id, attendSchema);
