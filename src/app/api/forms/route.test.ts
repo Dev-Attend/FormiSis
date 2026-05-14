@@ -45,8 +45,8 @@ describe("POST /api/forms", () => {
         email: "comercial@formsis.local",
         role: "COMERCIAL",
         name: "Comercial",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     allocateUniqueProposalIdMock.mockResolvedValue("FORM-001");

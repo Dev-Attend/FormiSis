@@ -45,8 +45,8 @@ describe("Admin companies route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        companyId: null,
-        company: null,
+        activeCompanyId: null,
+        activeCompany: null,
       },
     });
     dbMock.company.create.mockResolvedValue({

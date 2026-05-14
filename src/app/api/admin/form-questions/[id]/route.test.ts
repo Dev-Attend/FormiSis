@@ -51,8 +51,8 @@ describe("Admin form questions [id] route", () => {
         email: "admin@attend.local",
         role: "ADMIN",
         name: "Admin",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({
@@ -87,8 +87,8 @@ describe("Admin form questions [id] route", () => {
         email: "admin@attend.local",
         role: "ADMIN",
         name: "Admin",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({
@@ -144,8 +144,8 @@ describe("Admin form questions [id] route", () => {
         email: "admin@attend.local",
         role: "ADMIN",
         name: "Admin",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({
@@ -180,8 +180,8 @@ describe("Admin form questions [id] route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        companyId: null,
-        company: null,
+        activeCompanyId: null,
+        activeCompany: null,
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({
@@ -232,8 +232,8 @@ describe("Admin form questions [id] route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        companyId: null,
-        company: null,
+        activeCompanyId: null,
+        activeCompany: null,
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({

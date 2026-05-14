@@ -112,8 +112,8 @@ describe("GET /api/forms/schema", () => {
         email: "attend@formsis.local",
         role: "COMERCIAL",
         name: "Attend",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     loadTenantFormSchemaByCompanyIdMock.mockResolvedValue(attendSchema);
@@ -135,8 +135,8 @@ describe("GET /api/forms/schema", () => {
         email: "v8@formsis.local",
         role: "COMERCIAL",
         name: "V8",
-        companyId: "c_v8",
-        company: { id: "c_v8", name: "V8", slug: "v8" },
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
       },
     });
     loadTenantFormSchemaByCompanyIdMock.mockResolvedValue(v8Schema);
@@ -157,8 +157,8 @@ describe("GET /api/forms/schema", () => {
         email: "comercial@formsis.local",
         role: "COMERCIAL",
         name: "Comercial",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     loadTenantFormSchemaByCompanyIdMock.mockResolvedValue(attendSchema);
@@ -178,8 +178,8 @@ describe("GET /api/forms/schema", () => {
         email: "prevendas@formsis.local",
         role: "PRE_VENDAS",
         name: "Pre-vendas",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     loadTenantFormSchemaByCompanyIdMock.mockResolvedValue(attendSchema);
@@ -211,8 +211,8 @@ describe("GET /api/forms/schema", () => {
         email: "ordenacao@formsis.local",
         role: "ADMIN",
         name: "Admin",
-        companyId: "c_attend",
-        company: { id: "c_attend", name: "Attend", slug: "attend" },
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     loadTenantFormSchemaByCompanyIdMock.mockResolvedValue(attendSchema);
