@@ -21,6 +21,7 @@ function renameBlockKey(blockKey: string, used: Set<string>): string {
 
 async function applyBlock(
   companyId: string,
+  ownerId: string,
   block: CommitImportBlock,
   existingBlockKeys: Set<string>,
 ): Promise<{ status: "created" | "replaced" | "skipped" | "renamed"; blockKey: string; blockId?: string }> {
@@ -33,7 +34,7 @@ async function applyBlock(
 
   if (exists && strategy === "replace") {
     const target = await db.formBlock.findFirst({
-      where: { companyId, blockKey: block.blockKey },
+      where: { companyId, ownerId, blockKey: block.blockKey },
       select: { id: true },
     });
     if (target) {
@@ -60,6 +61,7 @@ async function applyBlock(
   const created = await db.formBlock.create({
     data: {
       companyId,
+      ownerId,
       blockKey: effectiveKey,
       title: block.title,
       description: block.description ?? null,
@@ -151,8 +153,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Colisao opera apenas sobre os blocos do proprio usuario na empresa.
   const existingBlocks = await db.formBlock.findMany({
-    where: { companyId: targetCompanyId },
+    where: { companyId: targetCompanyId, ownerId: auth.user.id },
     select: { blockKey: true },
   });
   const existingBlockKeys = new Set<string>(
@@ -167,7 +170,7 @@ export async function POST(request: NextRequest) {
 
   try {
     for (const block of parsed.data.blocks) {
-      const result = await applyBlock(targetCompanyId, block, existingBlockKeys);
+      const result = await applyBlock(targetCompanyId, auth.user.id, block, existingBlockKeys);
       results.push(result);
     }
   } catch (error) {
@@ -185,6 +188,7 @@ export async function POST(request: NextRequest) {
       resourceId: targetCompanyId,
       detailsJson: JSON.stringify({
         companyId: targetCompanyId,
+        ownerId: auth.user.id,
         actorRole: auth.user.role,
         results,
         totalBlocks: parsed.data.blocks.length,

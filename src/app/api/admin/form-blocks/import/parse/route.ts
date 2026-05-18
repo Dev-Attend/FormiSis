@@ -113,8 +113,9 @@ export async function POST(request: NextRequest) {
     questions: Array<{ fieldId: string }>;
   };
 
+  // Colisao considera apenas blocos do proprio usuario na empresa.
   const existingBlocks: ExistingBlock[] = await db.formBlock.findMany({
-    where: { companyId: targetCompanyId },
+    where: { companyId: targetCompanyId, ownerId: auth.user.id },
     select: {
       id: true,
       blockKey: true,
