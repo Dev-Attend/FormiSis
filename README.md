@@ -171,15 +171,18 @@ Todas as rotas tenant-aware (`/api/forms/schema`, `/api/admin/form-blocks*`, `/a
 
 A tela `/select-company` (estilo seletor de perfis do Chrome) e usada quando o usuario tem 2+ empresas ou quando ele clica "Trocar empresa" no AppShell. SUPER_ADMIN ve todas as empresas ativas; demais perfis veem apenas as vinculadas em `UserCompany`.
 
-### Questionários Dinâmicos por Empresa / Multi-tenancy
+### Questionários Dinâmicos por Empresa + Usuário / Multi-tenancy
 
-O FormiSis suporta múltiplas empresas (tenants). Cada usuário pertence a uma empresa via `User.companyId`, e o formulário carregado depende da empresa do usuário autenticado.
+O FormiSis suporta múltiplas empresas (tenants) com relação **N:N** usuário-empresa via `UserCompany` e empresa ativa no JWT (`activeCompanyId`). Os blocos e campos da "Nova proposta" são isolados por **empresa + usuário dono** (`FormBlock.ownerId`):
 
-O mesmo bloco pode ter perguntas diferentes por empresa. Exemplo: o `bloco1` da Attend pode ter um conjunto de perguntas e o `bloco1` da V8 outro conjunto.
+- Dois usuários da mesma empresa **não** veem, listam ou editam os blocos/campos um do outro.
+- Dois usuários da mesma empresa podem usar o **mesmo `blockKey`** sem conflito (unicidade `@@unique([companyId, ownerId, blockKey])`).
+- O mesmo usuário não pode duplicar `blockKey` na mesma empresa (cai na lógica de colisão).
+- `FormQuestion` é isolada automaticamente pelo bloco pai.
 
-Novas empresas podem ter blocos e perguntas próprios por dados no banco (`Company`, `FormBlock`, `FormQuestion`) e seed/configuração, sem alteração de código-fonte para cadastrar perguntas.
+Novas empresas/usuários têm blocos e perguntas próprios por dados no banco (`Company`, `FormBlock`, `FormQuestion`) e seed/Form Builder/importação de PDF, sem alteração de código-fonte.
 
-O frontend não define perguntas por hard-code de tenant. O schema vem da API e a `ProposalForm` renderiza dinamicamente.
+O frontend não define perguntas nem filtra por usuário como segurança principal. O schema vem da API e a `ProposalForm` apenas renderiza; sem blocos próprios, exibe estado vazio ("Nenhum bloco de proposta cadastrado para este usuário nesta empresa.").
 
 Endpoint principal:
 
@@ -187,16 +190,19 @@ Endpoint principal:
 
 Fluxo do endpoint:
 1. Valida sessão/perfil com `requireApiAccess`.
-2. Identifica o usuário autenticado.
-3. Busca a empresa vinculada ao usuário (`companyId`).
-4. Consulta blocos e perguntas ativos da empresa.
+2. Identifica o usuário autenticado e a empresa ativa (`activeCompanyId`).
+3. Sem `activeCompanyId` → `409 { redirectTo: "/select-company" }`.
+4. Consulta blocos/perguntas ativos filtrando `{ companyId: activeCompanyId, ownerId: auth.user.id, active: true }`.
 5. Retorna blocos/perguntas ordenados.
 6. Remove o bloco interno de pré-vendas para usuários que não são `PRE_VENDAS`, `ADMIN` ou `SUPER_ADMIN`.
 
-Regra de isolamento:
-1. Usuário da Attend recebe schema da Attend.
-2. Usuário da V8 recebe schema da V8.
-3. A seleção do schema é por empresa do usuário autenticado, sem `if company === "V8"` no frontend/backend para escolher perguntas.
+Não há mais fallback legado: a "Nova proposta" mostra **apenas** os blocos dinâmicos do próprio usuário na empresa ativa (inclusive para a Attend).
+
+Regra de isolamento (`Form schema = blocos ativos da empresa ativa + pertencentes ao usuário autenticado`):
+1. Gean na V8 recebe apenas blocos/campos de Gean na V8.
+2. Fulano na V8 não recebe blocos de Gean; vê seus próprios ou estado vazio.
+3. Gean em outra empresa não recebe os blocos de Gean na V8.
+4. Tentativa de acessar recurso de outro usuário retorna `404` (não `403`, para não revelar existência).
 
 Exemplo de resposta JSON:
 
@@ -238,9 +244,10 @@ Exemplo de resposta JSON:
    - `/admin/questionarios`: Gestão e ordenação de blocos.
    - `/admin/questionarios/blocos/[blockId]/perguntas`: Gestão e ordenação de perguntas de um bloco específico.
 3. **Regras por perfil**:
-   - `SUPER_ADMIN`: Pode selecionar a empresa e gerenciar blocos/perguntas de qualquer tenant.
-   - `ADMIN`: Gerencia apenas blocos/perguntas da própria empresa.
+   - `SUPER_ADMIN`: Seleciona a empresa no seletor da página (`?companyId`) e gerencia apenas os **próprios** blocos/perguntas (`ownerId = ele mesmo`) nessa empresa.
+   - `ADMIN`: Gerencia apenas os **próprios** blocos/perguntas (`ownerId = ele mesmo`) na empresa ativa.
    - `COMERCIAL`, `PRE_VENDAS` e `LEITURA`: Não acessam a área.
+   - Acessar bloco/pergunta de outro usuário (ou outra empresa, para `ADMIN`) retorna `404`.
 4. **Funcionalidades da tela**:
    - Listar, criar, editar, ativar/desativar e ordenar blocos.
    - Listar, criar, editar, ativar/desativar e ordenar perguntas.
@@ -259,8 +266,8 @@ Exemplo de resposta JSON:
    - `fieldId` é gerado automaticamente com `toFieldId(label)` ao criar a pergunta.
    - Ao editar o label de uma pergunta existente, o `fieldId` não deve ser alterado automaticamente para evitar quebra de histórico.
    - `optionsJson` e `validationJson` continuam como JSON serializado no banco.
-   - Somente blocos/perguntas ativos (`active = true`) aparecem em `GET /api/forms/schema`.
-   - Toda mutação relevante (criação, edição, desativação) gera `AuditLog`.
+   - Somente blocos/perguntas ativos (`active = true`) **e do usuário autenticado** aparecem em `GET /api/forms/schema`.
+   - Toda mutação relevante gera `AuditLog` (`FORM_BLOCK_CREATED/UPDATED/DISABLED`, `FORM_QUESTION_CREATED/UPDATED/DISABLED`, `FORM_BLOCKS_IMPORTED_FROM_PDF`) com `companyId` e `ownerId` no `detailsJson`.
 
 ### Importação de Questionários a partir de PDF
 
@@ -277,7 +284,7 @@ Exemplo de resposta JSON:
    - "Quantos...?", "Quantas...?", "Quantidade..." -> `number`.
    - "Razão Social", "Endereço", "Site", "Contato", "Responsável", "Operadora" -> `text`.
    - Demais perguntas terminadas em `?` -> `textarea`; rótulos curtos sem `?` -> `text`.
-5. **Detecção de colisão**: o preview marca blocos cuja `blockKey` já existe na empresa. Por bloco, o admin escolhe a estratégia:
+5. **Detecção de colisão**: escopo por `companyId + ownerId + blockKey`. O preview marca blocos cuja `blockKey` já existe **para o próprio usuário** na empresa (importar `blockKey` igual ao de outro usuário não é colisão). Por bloco, o admin escolhe a estratégia:
    - `skip` (padrão para colisões): mantém o existente.
    - `replace`: apaga todas as perguntas antigas e recria com o conteúdo importado.
    - `rename`: cria um novo bloco com sufixo numérico (`<key>_2`, `<key>_3`, ...).
@@ -286,8 +293,9 @@ Exemplo de resposta JSON:
    - Itens cujo texto já termina em `?`, `!` ou `.` não absorvem linhas subsequentes (evita anexar rodapé/disclaimer do PDF como label de pergunta).
    - Todos os labels passam por um corte rígido de 160 caracteres, alinhado ao schema Zod.
 7. **Permissões**:
+   - Todo bloco importado recebe `ownerId = auth.user.id`.
    - `ADMIN` importa somente para a `activeCompanyId` da sessão. Tentar passar outro `companyId` retorna `403`.
-   - `SUPER_ADMIN` importa para qualquer empresa ativa (campo `companyId` no payload).
+   - `SUPER_ADMIN` importa para a empresa do seletor (`companyId` no payload), sempre como dono dos blocos importados.
    - Empresa inexistente/inativa -> `400`. Sessão sem `activeCompanyId` em rota tenant-aware -> `409 redirectTo=/select-company`.
 
 #### Endpoints
@@ -314,7 +322,8 @@ Os blocos criados pelo import usam `blockKey` semântica (`informacoes_corporati
 
 | # | Regra |
 |---|---|
-| R1 | O schema por tenant vem de `FormBlock`/`FormQuestion` via `formSchemaService.ts`; `formSchema.ts` permanece como base legada/compatibilidade. IDs de campo seguem `toFieldId(label)` salvo exceções documentadas. |
+| R1 | O schema vem **exclusivamente** de `FormBlock`/`FormQuestion` via `formSchemaService.ts`, filtrado por `companyId` (empresa ativa) **+ `ownerId` (usuário autenticado)** + `active`. Não há mais fallback para `formSchema.ts` (a Attend também segue isolamento por usuário). `formSchema.ts` permanece apenas como mapa de referência/`toFieldId`. |
+| R1b | **`FormBlock` é isolado por empresa + dono**: `@@unique([companyId, ownerId, blockKey])`. Acesso a recurso de outro usuário/empresa retorna `404` (nunca `403`). `SUPER_ADMIN` escopa empresa pelo seletor (`?companyId`/body) mas só gerencia os próprios blocos. |
 | R2 | **`rulesEngine.ts` é puro** (sem side effects, sem I/O). Toda lógica condicional de campos obrigatórios e visibilidade de blocos vive aqui. Não replique regras em componentes. |
 | R3 | **IDs de campo são gerados via `toFieldId(label)`** = `label.toLowerCase().replaceAll(/[^\w]+/g, "_")`. Qualquer campo cujo ID não siga esse padrão tem motivo explícito documentado no schema. |
 | R4 | **Nunca use `NextAuth`**. Autenticação é JWT nativo via `jose`. Cookiename: `formsis_session`. |
@@ -345,11 +354,11 @@ Os blocos criados pelo import usam `blockKey` semântica (`informacoes_corporati
 
 | # | Regra |
 |---|---|
-| A1 | Novos blocos/perguntas por empresa devem ser cadastrados no banco (`FormBlock`/`FormQuestion`) e entregues por `GET /api/forms/schema`. Evite hard-code por tenant no frontend/backend. |
+| A1 | Novos blocos/perguntas são cadastrados no banco (`FormBlock`/`FormQuestion`) com `companyId` + `ownerId` e entregues por `GET /api/forms/schema`. Evite hard-code por tenant/usuário no frontend/backend. |
 | A2 | Blocos legados (`bloco1`..`bloco20`) e os condicionais (`bloco12`, `bloco17`, `bloco19`) são gated pelo `rulesEngine`. Blocos com chave **fora** do padrão `bloco\d+` (ex.: importados de PDF) **bypassam** o gate em `ProposalForm.tsx` e em `listMissingRequiredFields`. Nunca hard-code visibilidade em componente. |
 | A3 | `@prisma/client` é `serverExternalPackage` (veja `next.config.ts`). Não importe Prisma em Client Components. |
 | A4 | O middleware (`proxy.ts`) faz **apenas** verificação de presença do cookie. Verificação de role e validade do JWT ocorre nas API routes via `requireApiAccess`. |
-| A5 | `AuditLog` deve ser criado para toda mutação de `FormSession`, `Submission`, `Company` e `User`. |
+| A5 | `AuditLog` deve ser criado para toda mutação de `FormSession`, `Submission`, `Company`, `User` e `FormBlock`/`FormQuestion` (incl. importação de PDF), com `companyId` e `ownerId` no `detailsJson`. |
 
 ---
 
@@ -357,7 +366,7 @@ Os blocos criados pelo import usam `blockKey` semântica (`informacoes_corporati
 
 ### `formSchema.ts` – Mapa de Blocos
 
-> Nota: este mapa representa o schema base legado (especialmente para compatibilidade da Attend). Em modo multi-tenant, blocos/perguntas podem variar por empresa via `FormBlock`/`FormQuestion`.
+> Nota: este mapa é apenas referência (nomes/`toFieldId` e gating do `rulesEngine`). **Não** é mais usado como fallback do schema — a "Nova proposta" vem 100% de `FormBlock`/`FormQuestion` isolados por empresa + usuário, inclusive para a Attend.
 
 | Bloco | Tema | Visibilidade | Campos aprox. |
 |---|---|---|---|
@@ -437,15 +446,18 @@ User { id, name, email, passwordHash, role: UserRole, active, createdAt, updated
   -> UserRole: SUPER_ADMIN | ADMIN | COMERCIAL | PRE_VENDAS | LEITURA
   -> NAO tem mais companyId direto (substituido por UserCompany N:N)
   -> SUPER_ADMIN pode ficar sem vinculos; demais perfis precisam de >=1
+  -> 1:N com FormBlock via ownedFormBlocks (dono dos blocos)
 
 UserCompany { id, userId, companyId, createdAt, updatedAt }
   -> @@unique([userId, companyId]) + indices em userId e companyId
   -> cascade em ambos os lados
   -> origem de verdade para vinculos usuario<->empresa
 
-FormBlock { id, companyId, blockKey, title, description?, order, active, createdAt, updatedAt }
-  -> unico por tenant em (companyId, blockKey)
-  -> 1:N com FormQuestion
+FormBlock { id, companyId, ownerId, blockKey, title, description?, order, active, createdAt, updatedAt }
+  -> unico por (companyId, ownerId, blockKey)
+  -> @@index([companyId, ownerId, active, order])
+  -> companyId -> Company (onDelete: Cascade); ownerId -> User (onDelete: Cascade)
+  -> 1:N com FormQuestion (isolada pelo bloco pai)
 
 FormQuestion { id, blockId, fieldId, label, type, placeholder?, helpText?,
                requiredDefault, optionsJson?, validationJson?, order, active, createdAt, updatedAt }
