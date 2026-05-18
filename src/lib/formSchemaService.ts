@@ -1,8 +1,7 @@
 import { db } from "@/lib/db";
-import { blocos as legacyBlocks, toFieldId } from "@/lib/formSchema";
+import { toFieldId } from "@/lib/formSchema";
 import { logger } from "@/lib/logger";
 import {
-  mapLegacyBlocksToTenantBlocks,
   normalizeFieldType,
   parseOptionsJson,
   parseValidationJson,
@@ -100,32 +99,10 @@ export async function loadTenantFormSchemaByCompanyId(
     }),
   }));
 
-  let blocks: TenantSchemaBlock[] = dynamicBlocks;
-  if (company.slug === "attend") {
-    const legacyTenantBlocks = mapLegacyBlocksToTenantBlocks(legacyBlocks);
-    if (dynamicBlocks.length === 0) {
-      blocks = legacyTenantBlocks;
-    } else {
-      const dynamicByKey = new Map(dynamicBlocks.map((block) => [block.key, block]));
-      const mergedLegacy = legacyTenantBlocks.map(
-        (legacy) => dynamicByKey.get(legacy.key) ?? legacy,
-      );
-      const extraDynamic = dynamicBlocks.filter(
-        (block) => !legacyTenantBlocks.some((legacy) => legacy.key === block.key),
-      );
-      blocks = [...mergedLegacy, ...extraDynamic].sort((a, b) => a.order - b.order);
-    }
-  }
-
-  if (dynamicBlocks.length === 0 && company.slug === "attend") {
-    logger.warn(
-      { companyId: company.id, companySlug: company.slug },
-      "Schema dinâmico ausente para Attend. Fallback para formSchema.ts aplicado.",
-    );
-  }
-
+  // Isolamento estrito por empresa + dono: sem fallback legado. A "Nova
+  // proposta" mostra apenas os blocos dinamicos do proprio usuario.
   return {
     company: { id: company.id, name: company.name, slug: company.slug },
-    blocks,
+    blocks: dynamicBlocks,
   };
 }
