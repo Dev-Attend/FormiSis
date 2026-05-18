@@ -20,8 +20,9 @@ export async function PATCH(
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
+  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
 
-  if (!auth.user.activeCompanyId) {
+  if (!isSuperAdmin && !auth.user.activeCompanyId) {
     return NextResponse.json(
       { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
       { status: 409 },
@@ -32,11 +33,13 @@ export async function PATCH(
     where: { id },
     select: { id: true, companyId: true, ownerId: true },
   });
-  // Isolamento por empresa + dono. Retorna 404 (e nao 403) para nao
-  // revelar a existencia de recurso de outro usuario/empresa.
+  // Isolamento por dono (e empresa ativa para ADMIN). Retorna 404 (e nao
+  // 403) para nao revelar a existencia de recurso de outro usuario.
+  const companyOk =
+    isSuperAdmin || existingBlock?.companyId === auth.user.activeCompanyId;
   if (
     !existingBlock ||
-    existingBlock.companyId !== auth.user.activeCompanyId ||
+    !companyOk ||
     existingBlock.ownerId !== auth.user.id
   ) {
     return NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });

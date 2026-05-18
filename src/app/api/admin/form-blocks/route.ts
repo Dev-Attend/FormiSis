@@ -23,25 +23,37 @@ export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request, ["SUPER_ADMIN", "ADMIN"]);
   if (!auth.ok) return auth.response;
 
+  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
   const companyFilter = parseCompanyFilter(request);
 
-  // Isolamento por empresa + dono: todo role (inclusive SUPER_ADMIN)
-  // gerencia apenas os proprios blocos na empresa ativa.
-  if (!auth.user.activeCompanyId) {
-    return NextResponse.json(
-      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
-      { status: 409 },
-    );
-  }
-  if (companyFilter && companyFilter !== auth.user.activeCompanyId) {
-    return NextResponse.json(
-      { error: "Sem permissao para listar blocos de outra empresa." },
-      { status: 403 },
-    );
+  // Isolamento por dono: qualquer papel gerencia apenas os proprios blocos
+  // (ownerId = usuario autenticado). Escopo de empresa:
+  // - SUPER_ADMIN: empresa escolhida no seletor (?companyId);
+  // - ADMIN: empresa ativa da sessao.
+  let companyScope: string;
+  if (isSuperAdmin) {
+    if (!companyFilter) {
+      return NextResponse.json({ blocks: [] });
+    }
+    companyScope = companyFilter;
+  } else {
+    if (!auth.user.activeCompanyId) {
+      return NextResponse.json(
+        { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+        { status: 409 },
+      );
+    }
+    if (companyFilter && companyFilter !== auth.user.activeCompanyId) {
+      return NextResponse.json(
+        { error: "Sem permissao para listar blocos de outra empresa." },
+        { status: 403 },
+      );
+    }
+    companyScope = auth.user.activeCompanyId;
   }
 
   const where = {
-    companyId: auth.user.activeCompanyId,
+    companyId: companyScope,
     ownerId: auth.user.id,
   };
 
@@ -85,21 +97,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!auth.user.activeCompanyId) {
-    return NextResponse.json(
-      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
-      { status: 409 },
-    );
+  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
+  let targetCompanyId: string;
+  if (isSuperAdmin) {
+    if (!parsed.data.companyId) {
+      return NextResponse.json(
+        { error: "companyId e obrigatorio para SUPER_ADMIN criar bloco." },
+        { status: 400 },
+      );
+    }
+    targetCompanyId = parsed.data.companyId;
+  } else {
+    if (!auth.user.activeCompanyId) {
+      return NextResponse.json(
+        { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+        { status: 409 },
+      );
+    }
+    if (parsed.data.companyId && parsed.data.companyId !== auth.user.activeCompanyId) {
+      return NextResponse.json(
+        { error: "Nao e permitido criar blocos para outra empresa." },
+        { status: 403 },
+      );
+    }
+    targetCompanyId = auth.user.activeCompanyId;
   }
-
-  if (parsed.data.companyId && parsed.data.companyId !== auth.user.activeCompanyId) {
-    return NextResponse.json(
-      { error: "Nao e permitido criar blocos para outra empresa." },
-      { status: 403 },
-    );
-  }
-
-  const targetCompanyId = auth.user.activeCompanyId;
 
   const company = await db.company.findUnique({
     where: { id: targetCompanyId },

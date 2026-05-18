@@ -49,7 +49,7 @@ describe("Admin form blocks route", () => {
     vi.clearAllMocks();
   });
 
-  it("SUPER_ADMIN sem empresa ativa recebe 409", async () => {
+  it("SUPER_ADMIN sem ?companyId recebe lista vazia", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -65,12 +65,12 @@ describe("Admin form blocks route", () => {
     const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks"));
     const body = await response.json();
 
-    expect(response.status).toBe(409);
-    expect(body.redirectTo).toBe("/select-company");
+    expect(response.status).toBe(200);
+    expect(body.blocks).toEqual([]);
     expect(dbMock.formBlock.findMany).not.toHaveBeenCalled();
   });
 
-  it("SUPER_ADMIN tambem lista apenas os proprios blocos na empresa ativa", async () => {
+  it("SUPER_ADMIN lista apenas os proprios blocos na empresa do seletor", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -78,13 +78,15 @@ describe("Admin form blocks route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: "c_v8",
-        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
+        activeCompanyId: null,
+        activeCompany: null,
       },
     });
     dbMock.formBlock.findMany.mockResolvedValue([]);
 
-    const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks"));
+    const response = await GET(
+      new NextRequest("http://localhost:3001/api/admin/form-blocks?companyId=c_v8"),
+    );
     expect(response.status).toBe(200);
 
     const query = dbMock.formBlock.findMany.mock.calls[0][0] as {
@@ -141,7 +143,7 @@ describe("Admin form blocks route", () => {
     expect(query.where?.ownerId).toBe("a1");
   });
 
-  it("SUPER_ADMIN cria bloco como dono na empresa ativa", async () => {
+  it("SUPER_ADMIN cria bloco como dono na empresa do seletor", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -149,8 +151,8 @@ describe("Admin form blocks route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: "c_v8",
-        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
+        activeCompanyId: null,
+        activeCompany: null,
       },
     });
     dbMock.company.findUnique.mockResolvedValue({ id: "c_v8", active: true });
@@ -173,6 +175,7 @@ describe("Admin form blocks route", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        companyId: "c_v8",
         blockKey: "bloco22",
         title: "Bloco novo",
         order: 22,

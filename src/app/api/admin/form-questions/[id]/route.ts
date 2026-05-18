@@ -20,16 +20,15 @@ function isBlockOwnedByUser({
   block,
   authUserId,
   activeCompanyId,
+  isSuperAdmin,
 }: {
   block: { companyId: string; ownerId: string };
   authUserId: string;
   activeCompanyId: string | null;
+  isSuperAdmin: boolean;
 }) {
-  return (
-    Boolean(activeCompanyId) &&
-    block.companyId === activeCompanyId &&
-    block.ownerId === authUserId
-  );
+  const companyOk = isSuperAdmin || block.companyId === activeCompanyId;
+  return companyOk && block.ownerId === authUserId;
 }
 
 export async function PATCH(
@@ -40,8 +39,9 @@ export async function PATCH(
   if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
+  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
 
-  if (!auth.user.activeCompanyId) {
+  if (!isSuperAdmin && !auth.user.activeCompanyId) {
     return NextResponse.json(
       { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
       { status: 409 },
@@ -67,6 +67,7 @@ export async function PATCH(
       block: existingQuestion.block,
       authUserId: auth.user.id,
       activeCompanyId: auth.user.activeCompanyId,
+      isSuperAdmin,
     })
   ) {
     return NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });

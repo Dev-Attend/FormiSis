@@ -33,29 +33,28 @@ function normalizeNullableText(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
-// Isolamento por empresa + dono. 409 quando sem empresa ativa; 404 (e nao
-// 403) quando o bloco nao pertence ao usuario/empresa, para nao revelar a
-// existencia de recurso de outro usuario.
+// Isolamento por dono (e empresa ativa para ADMIN). ADMIN sem empresa
+// ativa recebe 409; 404 (e nao 403) quando o bloco nao pertence ao
+// usuario, para nao revelar a existencia de recurso de outro usuario.
 function ensureBlockOwnerAccessOrError({
   block,
   authUserId,
   authActiveCompanyId,
+  isSuperAdmin,
 }: {
   block: { companyId: string; ownerId: string } | null;
   authUserId: string;
   authActiveCompanyId: string | null;
+  isSuperAdmin: boolean;
 }) {
-  if (!authActiveCompanyId) {
+  if (!isSuperAdmin && !authActiveCompanyId) {
     return NextResponse.json(
       { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
       { status: 409 },
     );
   }
-  if (
-    !block ||
-    block.companyId !== authActiveCompanyId ||
-    block.ownerId !== authUserId
-  ) {
+  const companyOk = isSuperAdmin || block?.companyId === authActiveCompanyId;
+  if (!block || !companyOk || block.ownerId !== authUserId) {
     return NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
   }
   return null;
@@ -88,6 +87,7 @@ export async function GET(
     block,
     authUserId: auth.user.id,
     authActiveCompanyId: auth.user.activeCompanyId,
+    isSuperAdmin: auth.user.role === "SUPER_ADMIN",
   });
   if (tenantError || !block) return tenantError ?? NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
 
@@ -146,6 +146,7 @@ export async function POST(
     block,
     authUserId: auth.user.id,
     authActiveCompanyId: auth.user.activeCompanyId,
+    isSuperAdmin: auth.user.role === "SUPER_ADMIN",
   });
   if (tenantError || !block) return tenantError ?? NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
 
