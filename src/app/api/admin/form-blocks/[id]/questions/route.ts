@@ -33,27 +33,30 @@ function normalizeNullableText(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function ensureBlockTenantAccessOrError({
-  companyId,
-  authUserRole,
+// Isolamento por empresa + dono. 409 quando sem empresa ativa; 404 (e nao
+// 403) quando o bloco nao pertence ao usuario/empresa, para nao revelar a
+// existencia de recurso de outro usuario.
+function ensureBlockOwnerAccessOrError({
+  block,
+  authUserId,
   authActiveCompanyId,
 }: {
-  companyId: string;
-  authUserRole: string;
+  block: { companyId: string; ownerId: string } | null;
+  authUserId: string;
   authActiveCompanyId: string | null;
 }) {
-  if (authUserRole === "SUPER_ADMIN") return null;
   if (!authActiveCompanyId) {
     return NextResponse.json(
       { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
       { status: 409 },
     );
   }
-  if (companyId !== authActiveCompanyId) {
-    return NextResponse.json(
-      { error: "Sem permissao para acessar bloco de outra empresa." },
-      { status: 403 },
-    );
+  if (
+    !block ||
+    block.companyId !== authActiveCompanyId ||
+    block.ownerId !== authUserId
+  ) {
+    return NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
   }
   return null;
 }
@@ -71,6 +74,7 @@ export async function GET(
     select: {
       id: true,
       companyId: true,
+      ownerId: true,
       blockKey: true,
       title: true,
       description: true,
@@ -79,16 +83,13 @@ export async function GET(
       company: { select: { id: true, name: true, slug: true } },
     },
   });
-  if (!block) {
-    return NextResponse.json({ error: "Bloco nao encontrado." }, { status: 404 });
-  }
 
-  const tenantError = ensureBlockTenantAccessOrError({
-    companyId: block.companyId,
-    authUserRole: auth.user.role,
+  const tenantError = ensureBlockOwnerAccessOrError({
+    block,
+    authUserId: auth.user.id,
     authActiveCompanyId: auth.user.activeCompanyId,
   });
-  if (tenantError) return tenantError;
+  if (tenantError || !block) return tenantError ?? NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
 
   const questions = (await db.formQuestion.findMany({
     where: { blockId: block.id },
@@ -134,21 +135,19 @@ export async function POST(
     select: {
       id: true,
       companyId: true,
+      ownerId: true,
       blockKey: true,
       title: true,
       company: { select: { id: true, name: true, slug: true } },
     },
   });
-  if (!block) {
-    return NextResponse.json({ error: "Bloco nao encontrado." }, { status: 404 });
-  }
 
-  const tenantError = ensureBlockTenantAccessOrError({
-    companyId: block.companyId,
-    authUserRole: auth.user.role,
+  const tenantError = ensureBlockOwnerAccessOrError({
+    block,
+    authUserId: auth.user.id,
     authActiveCompanyId: auth.user.activeCompanyId,
   });
-  if (tenantError) return tenantError;
+  if (tenantError || !block) return tenantError ?? NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
 
   let body: unknown;
   try {
@@ -233,6 +232,7 @@ export async function POST(
           order: question.order,
           active: question.active,
           companyId: block.companyId,
+          ownerId: block.ownerId,
           actorRole: auth.user.role,
         }),
         userId: auth.user.id,

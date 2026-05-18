@@ -23,29 +23,27 @@ export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request, ["SUPER_ADMIN", "ADMIN"]);
   if (!auth.ok) return auth.response;
 
-  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
   const companyFilter = parseCompanyFilter(request);
 
-  if (!isSuperAdmin) {
-    if (!auth.user.activeCompanyId) {
-      return NextResponse.json(
-        { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
-        { status: 409 },
-      );
-    }
-    if (companyFilter && companyFilter !== auth.user.activeCompanyId) {
-      return NextResponse.json(
-        { error: "Sem permissao para listar blocos de outra empresa." },
-        { status: 403 },
-      );
-    }
+  // Isolamento por empresa + dono: todo role (inclusive SUPER_ADMIN)
+  // gerencia apenas os proprios blocos na empresa ativa.
+  if (!auth.user.activeCompanyId) {
+    return NextResponse.json(
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+      { status: 409 },
+    );
+  }
+  if (companyFilter && companyFilter !== auth.user.activeCompanyId) {
+    return NextResponse.json(
+      { error: "Sem permissao para listar blocos de outra empresa." },
+      { status: 403 },
+    );
   }
 
-  const where = isSuperAdmin
-    ? companyFilter
-      ? { companyId: companyFilter }
-      : undefined
-    : { companyId: auth.user.activeCompanyId! };
+  const where = {
+    companyId: auth.user.activeCompanyId,
+    ownerId: auth.user.id,
+  };
 
   const blocks = await db.formBlock.findMany({
     where,
@@ -87,28 +85,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
-  if (!isSuperAdmin && !auth.user.activeCompanyId) {
+  if (!auth.user.activeCompanyId) {
     return NextResponse.json(
       { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
       { status: 409 },
     );
   }
 
-  if (!isSuperAdmin && parsed.data.companyId && parsed.data.companyId !== auth.user.activeCompanyId) {
+  if (parsed.data.companyId && parsed.data.companyId !== auth.user.activeCompanyId) {
     return NextResponse.json(
       { error: "Nao e permitido criar blocos para outra empresa." },
       { status: 403 },
     );
   }
 
-  const targetCompanyId = isSuperAdmin ? parsed.data.companyId ?? null : auth.user.activeCompanyId;
-  if (!targetCompanyId) {
-    return NextResponse.json(
-      { error: "companyId e obrigatorio para SUPER_ADMIN criar bloco." },
-      { status: 400 },
-    );
-  }
+  const targetCompanyId = auth.user.activeCompanyId;
 
   const company = await db.company.findUnique({
     where: { id: targetCompanyId },
@@ -125,6 +116,7 @@ export async function POST(request: NextRequest) {
     const block = await db.formBlock.create({
       data: {
         companyId: targetCompanyId,
+        ownerId: auth.user.id,
         blockKey: parsed.data.blockKey,
         title: parsed.data.title,
         description: normalizeNullableText(parsed.data.description) ?? null,
@@ -134,6 +126,7 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         companyId: true,
+        ownerId: true,
         blockKey: true,
         title: true,
         description: true,
@@ -156,6 +149,7 @@ export async function POST(request: NextRequest) {
           order: block.order,
           active: block.active,
           companyId: block.companyId,
+          ownerId: block.ownerId,
           actorRole: auth.user.role,
         }),
         userId: auth.user.id,
@@ -166,7 +160,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
-        { error: "Ja existe bloco com esta chave para a empresa informada." },
+        { error: "Voce ja possui um bloco com esta chave nesta empresa." },
         { status: 409 },
       );
     }

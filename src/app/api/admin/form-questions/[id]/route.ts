@@ -14,17 +14,22 @@ function normalizeNullableText(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
-function isTenantAllowed({
-  userRole,
+// Isolamento por empresa + dono do bloco pai. Perguntas ficam isoladas
+// automaticamente pelo bloco a que pertencem.
+function isBlockOwnedByUser({
+  block,
+  authUserId,
   activeCompanyId,
-  resourceCompanyId,
 }: {
-  userRole: string;
+  block: { companyId: string; ownerId: string };
+  authUserId: string;
   activeCompanyId: string | null;
-  resourceCompanyId: string;
 }) {
-  if (userRole === "SUPER_ADMIN") return true;
-  return Boolean(activeCompanyId) && activeCompanyId === resourceCompanyId;
+  return (
+    Boolean(activeCompanyId) &&
+    block.companyId === activeCompanyId &&
+    block.ownerId === authUserId
+  );
 }
 
 export async function PATCH(
@@ -36,6 +41,13 @@ export async function PATCH(
 
   const { id } = await context.params;
 
+  if (!auth.user.activeCompanyId) {
+    return NextResponse.json(
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+      { status: 409 },
+    );
+  }
+
   const existingQuestion = await db.formQuestion.findUnique({
     where: { id },
     select: {
@@ -45,24 +57,19 @@ export async function PATCH(
       label: true,
       type: true,
       optionsJson: true,
-      block: { select: { id: true, companyId: true } },
+      block: { select: { id: true, companyId: true, ownerId: true } },
     },
   });
-  if (!existingQuestion) {
-    return NextResponse.json({ error: "Pergunta nao encontrada." }, { status: 404 });
-  }
-
+  // 404 (e nao 403) quando a pergunta/bloco nao pertence ao usuario.
   if (
-    !isTenantAllowed({
-      userRole: auth.user.role,
+    !existingQuestion ||
+    !isBlockOwnedByUser({
+      block: existingQuestion.block,
+      authUserId: auth.user.id,
       activeCompanyId: auth.user.activeCompanyId,
-      resourceCompanyId: existingQuestion.block.companyId,
     })
   ) {
-    return NextResponse.json(
-      { error: "Sem permissao para editar pergunta de outra empresa." },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
   }
 
   let body: unknown;
@@ -150,7 +157,10 @@ export async function PATCH(
 
     await db.auditLog.create({
       data: {
-        action: "FORM_QUESTION_UPDATED",
+        action:
+          update.active === false
+            ? "FORM_QUESTION_DISABLED"
+            : "FORM_QUESTION_UPDATED",
         resourceType: "FormQuestion",
         resourceId: question.id,
         detailsJson: JSON.stringify({
@@ -161,6 +171,7 @@ export async function PATCH(
           order: question.order,
           active: question.active,
           companyId: existingQuestion.block.companyId,
+          ownerId: existingQuestion.block.ownerId,
           actorRole: auth.user.role,
         }),
         userId: auth.user.id,

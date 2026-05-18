@@ -21,28 +21,25 @@ export async function PATCH(
 
   const { id } = await context.params;
 
-  const existingBlock = await db.formBlock.findUnique({
-    where: { id },
-    select: { id: true, companyId: true },
-  });
-  if (!existingBlock) {
-    return NextResponse.json({ error: "Bloco nao encontrado." }, { status: 404 });
+  if (!auth.user.activeCompanyId) {
+    return NextResponse.json(
+      { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
+      { status: 409 },
+    );
   }
 
-  const isSuperAdmin = auth.user.role === "SUPER_ADMIN";
-  if (!isSuperAdmin) {
-    if (!auth.user.activeCompanyId) {
-      return NextResponse.json(
-        { error: "Selecione uma empresa antes de continuar.", redirectTo: "/select-company" },
-        { status: 409 },
-      );
-    }
-    if (existingBlock.companyId !== auth.user.activeCompanyId) {
-      return NextResponse.json(
-        { error: "Sem permissao para editar bloco de outra empresa." },
-        { status: 403 },
-      );
-    }
+  const existingBlock = await db.formBlock.findUnique({
+    where: { id },
+    select: { id: true, companyId: true, ownerId: true },
+  });
+  // Isolamento por empresa + dono. Retorna 404 (e nao 403) para nao
+  // revelar a existencia de recurso de outro usuario/empresa.
+  if (
+    !existingBlock ||
+    existingBlock.companyId !== auth.user.activeCompanyId ||
+    existingBlock.ownerId !== auth.user.id
+  ) {
+    return NextResponse.json({ error: "Recurso não encontrado" }, { status: 404 });
   }
 
   let body: unknown;
@@ -87,6 +84,7 @@ export async function PATCH(
       select: {
         id: true,
         companyId: true,
+        ownerId: true,
         blockKey: true,
         title: true,
         description: true,
@@ -100,7 +98,8 @@ export async function PATCH(
 
     await db.auditLog.create({
       data: {
-        action: "FORM_BLOCK_UPDATED",
+        action:
+          update.active === false ? "FORM_BLOCK_DISABLED" : "FORM_BLOCK_UPDATED",
         resourceType: "FormBlock",
         resourceId: block.id,
         detailsJson: JSON.stringify({
@@ -110,6 +109,7 @@ export async function PATCH(
           order: block.order,
           active: block.active,
           companyId: block.companyId,
+          ownerId: block.ownerId,
           actorRole: auth.user.role,
         }),
         userId: auth.user.id,
@@ -121,7 +121,7 @@ export async function PATCH(
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === "P2002") {
         return NextResponse.json(
-          { error: "Ja existe bloco com esta chave para a empresa informada." },
+          { error: "Voce ja possui um bloco com esta chave nesta empresa." },
           { status: 409 },
         );
       }
