@@ -340,11 +340,12 @@ async function upsertUser(email, name, role, password, companyIds = []) {
   return user;
 }
 
-async function upsertBlockWithQuestions(companyId, blockConfig) {
+async function upsertBlockWithQuestions(companyId, ownerId, blockConfig) {
   const block = await prisma.formBlock.upsert({
     where: {
-      companyId_blockKey: {
+      companyId_ownerId_blockKey: {
         companyId,
+        ownerId,
         blockKey: blockConfig.key,
       },
     },
@@ -356,6 +357,7 @@ async function upsertBlockWithQuestions(companyId, blockConfig) {
     },
     create: {
       companyId,
+      ownerId,
       blockKey: blockConfig.key,
       title: blockConfig.title,
       description: blockConfig.description ?? null,
@@ -387,9 +389,9 @@ async function upsertBlockWithQuestions(companyId, blockConfig) {
   }
 }
 
-async function seedCompanySchema(companyId, schemaBlocks) {
+async function seedCompanySchema(companyId, ownerId, schemaBlocks) {
   for (const blockConfig of schemaBlocks) {
-    await upsertBlockWithQuestions(companyId, blockConfig);
+    await upsertBlockWithQuestions(companyId, ownerId, blockConfig);
   }
 }
 
@@ -397,7 +399,7 @@ async function main() {
   const attend = await upsertCompany({ name: "Attend", slug: "attend" });
   const v8 = await upsertCompany({ name: "V8", slug: "v8" });
 
-  await upsertUser(
+  const superAdmin = await upsertUser(
     process.env.FORMSIS_ADMIN_EMAIL ?? "admin@formsis.local",
     "Super Administrador",
     UserRole.SUPER_ADMIN,
@@ -405,8 +407,8 @@ async function main() {
     [],
   );
 
-  await seedCompanySchema(attend.id, attendSchema);
-  await seedCompanySchema(v8.id, v8Schema);
+  await seedCompanySchema(attend.id, superAdmin.id, attendSchema);
+  await seedCompanySchema(v8.id, superAdmin.id, v8Schema);
 
   logger.info(
     {

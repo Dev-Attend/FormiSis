@@ -41,6 +41,7 @@ model User {
   formSessions       FormSession[]
   audits             AuditLog[]
   proposalRevisions  ProposalRevision[]
+  ownedFormBlocks    FormBlock[]
 }
 
 model Company {
@@ -73,6 +74,8 @@ model FormBlock {
   id          String         @id @default(cuid())
   companyId   String
   company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   blockKey    String
   title       String
   description String?
@@ -82,8 +85,8 @@ model FormBlock {
   updatedAt   DateTime       @updatedAt
   questions   FormQuestion[]
 
-  @@unique([companyId, blockKey])
-  @@index([companyId, active, order])
+  @@unique([companyId, ownerId, blockKey])
+  @@index([companyId, ownerId, active, order])
 }
 
 model FormQuestion {
