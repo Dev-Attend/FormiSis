@@ -43,7 +43,7 @@ describe("Admin form questions [id] route", () => {
     vi.clearAllMocks();
   });
 
-  it("ADMIN nao edita pergunta de outra empresa", async () => {
+  it("retorna 404 ao editar pergunta de outra empresa", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -62,7 +62,7 @@ describe("Admin form questions [id] route", () => {
       label: "Nome do cliente",
       type: "text",
       optionsJson: null,
-      block: { id: "b_v8", companyId: "c_v8" },
+      block: { id: "b_v8", companyId: "c_v8", ownerId: "a1" },
     });
 
     const request = new NextRequest("http://localhost:3001/api/admin/form-questions/q_v8", {
@@ -74,8 +74,44 @@ describe("Admin form questions [id] route", () => {
     const response = await PATCH(request, { params: Promise.resolve({ id: "q_v8" }) });
     const body = await response.json();
 
-    expect(response.status).toBe(403);
-    expect(body.error).toContain("outra empresa");
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Recurso não encontrado");
+    expect(dbMock.formQuestion.update).not.toHaveBeenCalled();
+  });
+
+  it("retorna 404 ao editar pergunta de bloco de outro usuario", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "fulano",
+        email: "fulano@v8.local",
+        role: "ADMIN",
+        name: "Fulano",
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
+      },
+    });
+    dbMock.formQuestion.findUnique.mockResolvedValue({
+      id: "q_gean",
+      blockId: "b_gean",
+      fieldId: "campo",
+      label: "Campo",
+      type: "text",
+      optionsJson: null,
+      block: { id: "b_gean", companyId: "c_v8", ownerId: "gean" },
+    });
+
+    const request = new NextRequest("http://localhost:3001/api/admin/form-questions/q_gean", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Hack" }),
+    });
+
+    const response = await PATCH(request, { params: Promise.resolve({ id: "q_gean" }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Recurso não encontrado");
     expect(dbMock.formQuestion.update).not.toHaveBeenCalled();
   });
 
@@ -98,7 +134,7 @@ describe("Admin form questions [id] route", () => {
       label: "Nome do cliente",
       type: "text",
       optionsJson: null,
-      block: { id: "b1", companyId: "c_attend" },
+      block: { id: "b1", companyId: "c_attend", ownerId: "a1" },
     });
     dbMock.formQuestion.update.mockResolvedValue({
       id: "q1",
@@ -155,7 +191,7 @@ describe("Admin form questions [id] route", () => {
       label: "Nome do cliente",
       type: "text",
       optionsJson: null,
-      block: { id: "b1", companyId: "c_attend" },
+      block: { id: "b1", companyId: "c_attend", ownerId: "a1" },
     });
 
     const request = new NextRequest("http://localhost:3001/api/admin/form-questions/q1", {
@@ -172,7 +208,7 @@ describe("Admin form questions [id] route", () => {
     expect(dbMock.formQuestion.update).not.toHaveBeenCalled();
   });
 
-  it("permite desativar pergunta com active=false", async () => {
+  it("permite desativar pergunta com active=false (FORM_QUESTION_DISABLED)", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -180,8 +216,8 @@ describe("Admin form questions [id] route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: null,
-        activeCompany: null,
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({
@@ -191,7 +227,7 @@ describe("Admin form questions [id] route", () => {
       label: "Nome do cliente",
       type: "text",
       optionsJson: null,
-      block: { id: "b1", companyId: "c_attend" },
+      block: { id: "b1", companyId: "c_attend", ownerId: "su1" },
     });
     dbMock.formQuestion.update.mockResolvedValue({
       id: "q1",
@@ -222,9 +258,14 @@ describe("Admin form questions [id] route", () => {
 
     expect(response.status).toBe(200);
     expect(body.question.active).toBe(false);
+
+    const auditArgs = dbMock.auditLog.create.mock.calls[0][0] as {
+      data: { action: string };
+    };
+    expect(auditArgs.data.action).toBe("FORM_QUESTION_DISABLED");
   });
 
-  it("SUPER_ADMIN edita pergunta de qualquer empresa", async () => {
+  it("SUPER_ADMIN edita apenas pergunta do proprio bloco na empresa ativa", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -232,8 +273,8 @@ describe("Admin form questions [id] route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: null,
-        activeCompany: null,
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
       },
     });
     dbMock.formQuestion.findUnique.mockResolvedValue({
@@ -243,7 +284,7 @@ describe("Admin form questions [id] route", () => {
       label: "Nome",
       type: "text",
       optionsJson: null,
-      block: { id: "b_v8", companyId: "c_v8" },
+      block: { id: "b_v8", companyId: "c_v8", ownerId: "su1" },
     });
     dbMock.formQuestion.update.mockResolvedValue({
       id: "q_v8",

@@ -49,36 +49,37 @@ describe("Admin form block questions route", () => {
     vi.clearAllMocks();
   });
 
-  it("ADMIN nao lista perguntas de bloco de outra empresa", async () => {
+  it("retorna 404 ao listar perguntas de bloco de outro usuario", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
-        id: "a1",
-        email: "admin@attend.local",
+        id: "fulano",
+        email: "fulano@v8.local",
         role: "ADMIN",
-        name: "Admin",
-        activeCompanyId: "c_attend",
-        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
+        name: "Fulano",
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
       },
     });
     dbMock.formBlock.findUnique.mockResolvedValue({
-      id: "b_v8",
+      id: "b_gean",
       companyId: "c_v8",
+      ownerId: "gean",
       blockKey: "bloco1",
-      title: "Bloco V8",
+      title: "Bloco do Gean",
       description: null,
       order: 1,
       active: true,
       company: { id: "c_v8", name: "V8", slug: "v8" },
     });
 
-    const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks/b_v8/questions"), {
-      params: Promise.resolve({ id: "b_v8" }),
+    const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks/b_gean/questions"), {
+      params: Promise.resolve({ id: "b_gean" }),
     });
     const body = await response.json();
 
-    expect(response.status).toBe(403);
-    expect(body.error).toContain("outra empresa");
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Recurso não encontrado");
     expect(dbMock.formQuestion.findMany).not.toHaveBeenCalled();
   });
 
@@ -90,13 +91,14 @@ describe("Admin form block questions route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: null,
-        activeCompany: null,
+        activeCompanyId: "c_attend",
+        activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
     dbMock.formBlock.findUnique.mockResolvedValue({
       id: "b_attend",
       companyId: "c_attend",
+      ownerId: "su1",
       blockKey: "bloco1",
       title: "Bloco Attend",
       description: null,
@@ -151,6 +153,7 @@ describe("Admin form block questions route", () => {
     dbMock.formBlock.findUnique.mockResolvedValue({
       id: "b_attend",
       companyId: "c_attend",
+      ownerId: "a1",
       blockKey: "bloco1",
       title: "Bloco Attend",
       description: null,
@@ -184,6 +187,7 @@ describe("Admin form block questions route", () => {
     dbMock.formBlock.findUnique.mockResolvedValue({
       id: "b_attend",
       companyId: "c_attend",
+      ownerId: "a1",
       blockKey: "bloco1",
       title: "Bloco Attend",
       company: { id: "c_attend", name: "Attend", slug: "attend" },
@@ -246,6 +250,7 @@ describe("Admin form block questions route", () => {
     dbMock.formBlock.findUnique.mockResolvedValue({
       id: "b_attend",
       companyId: "c_attend",
+      ownerId: "a1",
       blockKey: "bloco1",
       title: "Bloco Attend",
       company: { id: "c_attend", name: "Attend", slug: "attend" },
@@ -266,6 +271,41 @@ describe("Admin form block questions route", () => {
 
     expect(response.status).toBe(400);
     expect(body.error).toContain("exigem opcoes");
+    expect(dbMock.formQuestion.create).not.toHaveBeenCalled();
+  });
+
+  it("retorna 404 ao criar pergunta em bloco de outro usuario", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "fulano",
+        email: "fulano@v8.local",
+        role: "ADMIN",
+        name: "Fulano",
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
+      },
+    });
+    dbMock.formBlock.findUnique.mockResolvedValue({
+      id: "b_gean",
+      companyId: "c_v8",
+      ownerId: "gean",
+      blockKey: "bloco1",
+      title: "Bloco do Gean",
+      company: { id: "c_v8", name: "V8", slug: "v8" },
+    });
+
+    const request = new NextRequest("http://localhost:3001/api/admin/form-blocks/b_gean/questions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: "Campo", type: "text", order: 1 }),
+    });
+
+    const response = await POST(request, { params: Promise.resolve({ id: "b_gean" }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Recurso não encontrado");
     expect(dbMock.formQuestion.create).not.toHaveBeenCalled();
   });
 

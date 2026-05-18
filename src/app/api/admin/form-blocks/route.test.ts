@@ -49,7 +49,7 @@ describe("Admin form blocks route", () => {
     vi.clearAllMocks();
   });
 
-  it("SUPER_ADMIN lista blocos sem filtro de empresa", async () => {
+  it("SUPER_ADMIN sem empresa ativa recebe 409", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -61,16 +61,37 @@ describe("Admin form blocks route", () => {
         activeCompany: null,
       },
     });
-    dbMock.formBlock.findMany.mockResolvedValue([]);
 
     const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks"));
     const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body.blocks).toEqual([]);
+    expect(response.status).toBe(409);
+    expect(body.redirectTo).toBe("/select-company");
+    expect(dbMock.formBlock.findMany).not.toHaveBeenCalled();
+  });
 
-    const query = dbMock.formBlock.findMany.mock.calls[0][0] as { where?: unknown };
-    expect(query.where).toBeUndefined();
+  it("SUPER_ADMIN tambem lista apenas os proprios blocos na empresa ativa", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "su1",
+        email: "super@formsis.local",
+        role: "SUPER_ADMIN",
+        name: "Super",
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
+      },
+    });
+    dbMock.formBlock.findMany.mockResolvedValue([]);
+
+    const response = await GET(new NextRequest("http://localhost:3001/api/admin/form-blocks"));
+    expect(response.status).toBe(200);
+
+    const query = dbMock.formBlock.findMany.mock.calls[0][0] as {
+      where?: { companyId?: string; ownerId?: string };
+    };
+    expect(query.where?.companyId).toBe("c_v8");
+    expect(query.where?.ownerId).toBe("su1");
   });
 
   it("ADMIN nao lista blocos de outra empresa", async () => {
@@ -114,12 +135,13 @@ describe("Admin form blocks route", () => {
     expect(response.status).toBe(200);
 
     const query = dbMock.formBlock.findMany.mock.calls[0][0] as {
-      where?: { companyId?: string };
+      where?: { companyId?: string; ownerId?: string };
     };
     expect(query.where?.companyId).toBe("c_attend");
+    expect(query.where?.ownerId).toBe("a1");
   });
 
-  it("SUPER_ADMIN cria bloco para empresa selecionada", async () => {
+  it("SUPER_ADMIN cria bloco como dono na empresa ativa", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -127,14 +149,15 @@ describe("Admin form blocks route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: null,
-        activeCompany: null,
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
       },
     });
     dbMock.company.findUnique.mockResolvedValue({ id: "c_v8", active: true });
     dbMock.formBlock.create.mockResolvedValue({
       id: "b_v8_1",
       companyId: "c_v8",
+      ownerId: "su1",
       blockKey: "bloco22",
       title: "Bloco novo",
       description: null,
@@ -150,7 +173,6 @@ describe("Admin form blocks route", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        companyId: "c_v8",
         blockKey: "bloco22",
         title: "Bloco novo",
         order: 22,
@@ -162,6 +184,13 @@ describe("Admin form blocks route", () => {
 
     expect(response.status).toBe(201);
     expect(body.block.companyId).toBe("c_v8");
+    expect(body.block.ownerId).toBe("su1");
+
+    const createArgs = dbMock.formBlock.create.mock.calls[0][0] as {
+      data: { companyId: string; ownerId: string };
+    };
+    expect(createArgs.data.companyId).toBe("c_v8");
+    expect(createArgs.data.ownerId).toBe("su1");
   });
 
   it("ADMIN nao cria bloco em outra empresa via companyId", async () => {

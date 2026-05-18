@@ -43,7 +43,39 @@ describe("Admin form blocks [id] route", () => {
     vi.clearAllMocks();
   });
 
-  it("ADMIN nao edita bloco de outra empresa", async () => {
+  it("retorna 404 ao editar bloco de outro usuario na mesma empresa", async () => {
+    requireApiAccessMock.mockResolvedValue({
+      ok: true,
+      user: {
+        id: "fulano",
+        email: "fulano@v8.local",
+        role: "ADMIN",
+        name: "Fulano",
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
+      },
+    });
+    dbMock.formBlock.findUnique.mockResolvedValue({
+      id: "b_gean_1",
+      companyId: "c_v8",
+      ownerId: "gean",
+    });
+
+    const request = new NextRequest("http://localhost:3001/api/admin/form-blocks/b_gean_1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Novo titulo" }),
+    });
+
+    const response = await PATCH(request, { params: Promise.resolve({ id: "b_gean_1" }) });
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Recurso não encontrado");
+    expect(dbMock.formBlock.update).not.toHaveBeenCalled();
+  });
+
+  it("ADMIN nao edita bloco de outra empresa (404)", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -55,7 +87,11 @@ describe("Admin form blocks [id] route", () => {
         activeCompany: { id: "c_attend", name: "Attend", slug: "attend" },
       },
     });
-    dbMock.formBlock.findUnique.mockResolvedValue({ id: "b_v8_1", companyId: "c_v8" });
+    dbMock.formBlock.findUnique.mockResolvedValue({
+      id: "b_v8_1",
+      companyId: "c_v8",
+      ownerId: "a1",
+    });
 
     const request = new NextRequest("http://localhost:3001/api/admin/form-blocks/b_v8_1", {
       method: "PATCH",
@@ -66,12 +102,12 @@ describe("Admin form blocks [id] route", () => {
     const response = await PATCH(request, { params: Promise.resolve({ id: "b_v8_1" }) });
     const body = await response.json();
 
-    expect(response.status).toBe(403);
-    expect(body.error).toContain("outra empresa");
+    expect(response.status).toBe(404);
+    expect(body.error).toBe("Recurso não encontrado");
     expect(dbMock.formBlock.update).not.toHaveBeenCalled();
   });
 
-  it("SUPER_ADMIN desativa bloco com active=false", async () => {
+  it("dono desativa bloco com active=false e gera FORM_BLOCK_DISABLED", async () => {
     requireApiAccessMock.mockResolvedValue({
       ok: true,
       user: {
@@ -79,14 +115,19 @@ describe("Admin form blocks [id] route", () => {
         email: "super@formsis.local",
         role: "SUPER_ADMIN",
         name: "Super",
-        activeCompanyId: null,
-        activeCompany: null,
+        activeCompanyId: "c_v8",
+        activeCompany: { id: "c_v8", name: "V8", slug: "v8" },
       },
     });
-    dbMock.formBlock.findUnique.mockResolvedValue({ id: "b_v8_1", companyId: "c_v8" });
+    dbMock.formBlock.findUnique.mockResolvedValue({
+      id: "b_v8_1",
+      companyId: "c_v8",
+      ownerId: "su1",
+    });
     dbMock.formBlock.update.mockResolvedValue({
       id: "b_v8_1",
       companyId: "c_v8",
+      ownerId: "su1",
       blockKey: "bloco22",
       title: "Bloco 22",
       description: null,
@@ -114,6 +155,11 @@ describe("Admin form blocks [id] route", () => {
       data: { active: boolean };
     };
     expect(updateArgs.data.active).toBe(false);
+
+    const auditArgs = dbMock.auditLog.create.mock.calls[0][0] as {
+      data: { action: string };
+    };
+    expect(auditArgs.data.action).toBe("FORM_BLOCK_DISABLED");
   });
 
   it("rejeita requisicao nao autenticada", async () => {
