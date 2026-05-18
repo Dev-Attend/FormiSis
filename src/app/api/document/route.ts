@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 
   const resolveSchemaBlocks = async (companyId?: string | null) => {
     if (!companyId) return blocos;
-    const tenantSchema = await loadTenantFormSchemaByCompanyId(companyId);
+    const tenantSchema = await loadTenantFormSchemaByCompanyId(companyId, auth.user.id);
     if (!tenantSchema) return blocos;
     if (tenantSchema.blocks.length === 0) return [] as typeof blocos;
     return mapTenantBlocksToFormBlocks(tenantSchema.blocks);

@@ -107,7 +107,7 @@ export async function PATCH(
   const schemaCompanyId = auth.user.activeCompanyId;
   let schemaBlocks = blocos;
   if (schemaCompanyId) {
-    const tenantSchema = await loadTenantFormSchemaByCompanyId(schemaCompanyId);
+    const tenantSchema = await loadTenantFormSchemaByCompanyId(schemaCompanyId, auth.user.id);
     if (tenantSchema?.blocks.length) {
       schemaBlocks = mapTenantBlocksToFormBlocks(tenantSchema.blocks);
     } else if (tenantSchema && tenantSchema.blocks.length === 0) {

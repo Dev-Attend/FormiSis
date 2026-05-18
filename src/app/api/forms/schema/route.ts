@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const schema = await loadTenantFormSchemaByCompanyId(auth.user.activeCompanyId);
+  const schema = await loadTenantFormSchemaByCompanyId(
+    auth.user.activeCompanyId,
+    auth.user.id,
+  );
   if (!schema) {
     return NextResponse.json(
       { error: "Empresa sem schema ativo de formulario." },

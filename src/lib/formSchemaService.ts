@@ -34,6 +34,7 @@ type DbFormBlockRow = {
 
 export async function loadTenantFormSchemaByCompanyId(
   companyId: string,
+  ownerId: string,
 ): Promise<TenantSchemaResponse | null> {
   const company = await db.company.findUnique({
     where: { id: companyId },
@@ -42,7 +43,7 @@ export async function loadTenantFormSchemaByCompanyId(
   if (!company || !company.active) return null;
 
   const blocksFromDb = (await db.formBlock.findMany({
-    where: { companyId, active: true },
+    where: { companyId, ownerId, active: true },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     include: {
       questions: {
